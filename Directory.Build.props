@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Documentation analysis is intentionally disabled, including its configuration notice. -->
+    <NoWarn>$(NoWarn);SA0001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StyleCop.Analyzers" Version="1.3.180" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
+
+

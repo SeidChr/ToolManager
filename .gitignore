@@ -1,0 +1,28 @@
+# .NET build and publish output
+[Bb]in/
+[Oo]bj/
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Local IDE state and user settings
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet package output
+*.nupkg
+*.snupkg
+
+# Project output, temporary work, and local application data
+outputs/
+work/
+data/
+tools.json
+tools.json.bak
+tools.json.tmp

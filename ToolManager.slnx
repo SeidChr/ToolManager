@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ToolManager.csproj" />
+  <Project Path="tests/Fixture.csproj" />
+</Solution>

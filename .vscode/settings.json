@@ -1,0 +1,5 @@
+{
+  "dotnet.defaultSolution": "ToolManager.slnx",
+  "dotnet.projects.enableFileBasedPrograms": false,
+  "dotnet.fileBasedApps.enableAutomaticDiscovery": false
+}
