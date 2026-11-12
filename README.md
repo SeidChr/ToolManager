@@ -13,6 +13,16 @@ Requires the .NET 10 SDK to build. Use PowerShell:
 
 The published win-x64 folder includes the .NET runtime. Copy the entire folder, including your tools, to another Windows PC. No installer, service, registry changes, or web server is used. Automatic startup is optional through Settings. The build script backs up existing settings, builds/tests under work/build, publishes to a staging directory, and copies only application files into outputs/ToolManager. tools.json, its backup and data are never copied from a build or deleted. A running distribution must be closed before it can be updated. Use Start-ToolManager.ps1 to consistently launch the configured distribution. Development executables under bin or work/build also use that same portable root when the source project is present. Distributed copies use their own folder. A missing configuration is recovered from tools.json.bak when available.
 
+## GitHub releases
+
+After `.github/workflows/release.yml` is on the repository's default branch, open **Actions > Build and release > Run workflow**. Select the branch to build and enter a new version tag such as `v1.0.0`. The workflow runs only when manually started.
+
+The Windows runner installs the .NET 10 SDK and runs `Build.ps1 -Test -Publish`. Only after the build and checks pass does it zip the self-contained Windows x64 application and create a published GitHub release with generated notes. The new tag points to the exact commit selected for the run. Existing tags are rejected. The executable's version is taken from the tag without the `v` prefix. The release asset is `ToolManager-v1.0.0-win-x64.zip`; extract it and run `ToolManager/ToolManager.exe`.
+
+The workflow uses the built-in `GITHUB_TOKEN` with `contents: write`; no additional secret is required. Repository or organization policy must allow GitHub Actions and this permission. Packages contain application files and the README, without local settings, user data, or bundled user tools.
+
+Decision4 class: Repair. Boundary map gap: no project boundary map was supplied. Chose the existing build script over separate CI build commands because release and local checks should stay consistent. Commits us to a Windows runner and creating a new version tag for each release.
+
 ## Start with Windows
 
 Settings > Startup provides Add startup task and Remove startup task. Add is enabled only when this copy's task is absent; Remove is enabled only when it exists. Status refreshes when Settings opens or regains focus. If Task Scheduler cannot be read, both buttons remain disabled and an error is shown.

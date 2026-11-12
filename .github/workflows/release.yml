@@ -1,0 +1,65 @@
+name: Build and release
+run-name: Release ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New release tag (for example, v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+
+    steps:
+      - name: Check out selected commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate new release tag
+        run: |
+          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw 'Use a release tag such as v1.0.0.'
+          }
+          $tags = git tag --list
+          if ($LASTEXITCODE) { throw 'Could not read existing tags.' }
+          if ($tags -contains $env:RELEASE_TAG) { throw 'This tag already exists. Choose a new version.' }
+          "Version=$($env:RELEASE_TAG.Substring(1))" >> $env:GITHUB_ENV
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build, test and publish portable application
+        run: .\Build.ps1 -Test -Publish
+
+      - name: Package Windows x64 release
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          Compress-Archive -Path outputs/ToolManager -DestinationPath "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create $env:RELEASE_TAG "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip" --target $env:GITHUB_SHA --title "Tool Manager $env:RELEASE_TAG" --generate-notes
+          if ($LASTEXITCODE) { throw 'GitHub release creation failed.' }
