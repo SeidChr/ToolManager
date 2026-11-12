@@ -10,16 +10,20 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
+    name: Build downloadable candidate
     runs-on: windows-latest
     timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+      package-sha256: ${{ steps.package.outputs.sha256 }}
     defaults:
       run:
         shell: pwsh
@@ -52,14 +56,82 @@ jobs:
         run: .\Build.ps1 -Test -Publish
 
       - name: Package Windows x64 release
+        id: package
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          Compress-Archive -Path outputs/ToolManager -DestinationPath "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
+          $archive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
+          Compress-Archive -Path outputs/ToolManager -DestinationPath $archive
+          "sha256=$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload downloadable candidate
+        id: candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: ToolManager-${{ inputs.tag }}-win-x64-candidate-${{ github.run_attempt }}
+          path: artifacts/ToolManager-${{ inputs.tag }}-win-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Show candidate download
+        env:
+          ARTIFACT_URL: ${{ steps.candidate.outputs.artifact-url }}
+          PACKAGE_SHA256: ${{ steps.package.outputs.sha256 }}
+        run: |
+          "Download and test the [Windows x64 candidate]($env:ARTIFACT_URL) before approving publication." >> $env:GITHUB_STEP_SUMMARY
+          "Source commit: $env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "SHA256: $env:PACKAGE_SHA256" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Require configured release approval
+        run: |
+          try {
+            $environment = Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/environments/release" -Headers @{ Accept = 'application/vnd.github+json' }
+          } catch {
+            throw 'Could not verify the release environment. Configure Settings > Environments > release > Required reviewers. The candidate remains downloadable.'
+          }
+          $reviewRules = @($environment.protection_rules | Where-Object { $_.type -eq 'required_reviewers' -and $_.reviewers.Count -gt 0 })
+          if ($reviewRules.Count -eq 0) {
+            throw 'Configure Settings > Environments > release > Required reviewers before publishing. The candidate remains downloadable.'
+          }
+
+  release:
+    name: Publish approved candidate
+    needs: build
+    environment: release
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+
+    steps:
+      - name: Download the exact candidate
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: artifacts
+
+      - name: Verify candidate checksum
+        env:
+          EXPECTED_SHA256: ${{ needs.build.outputs.package-sha256 }}
+        run: |
+          $archive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
+          if (!$env:EXPECTED_SHA256 -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $env:EXPECTED_SHA256) {
+            throw 'Candidate checksum does not match the reviewed build.'
+          }
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          $tagPath = [Uri]::EscapeDataString("tags/$env:RELEASE_TAG")
+          $existingTag = gh api "repos/$env:GH_REPO/git/matching-refs/$tagPath"
+          if ($LASTEXITCODE) { throw 'Could not check whether the release tag exists.' }
+          if ($existingTag | ConvertFrom-Json | Where-Object { $_.ref -ceq "refs/tags/$env:RELEASE_TAG" }) { throw 'This tag already exists. Choose a new version.' }
           gh release create $env:RELEASE_TAG "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip" --target $env:GITHUB_SHA --title "Tool Manager $env:RELEASE_TAG" --generate-notes
           if ($LASTEXITCODE) { throw 'GitHub release creation failed.' }
