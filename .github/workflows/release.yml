@@ -24,6 +24,7 @@ jobs:
     outputs:
       artifact-id: ${{ steps.candidate.outputs.artifact-id }}
       package-sha256: ${{ steps.package.outputs.sha256 }}
+      framework-dependent-sha256: ${{ steps.package.outputs.framework-dependent-sha256 }}
     defaults:
       run:
         shell: pwsh
@@ -52,8 +53,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Build, test and publish portable application
-        run: .\Build.ps1 -Test -Publish
+      - name: Build, test and publish both application variants
+        run: |
+          .\Build.ps1 -Test -Publish
+          .\Build.ps1 -Publish -FrameworkDependent
 
       - name: Package Windows x64 release
         id: package
@@ -62,13 +65,16 @@ jobs:
           $archive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
           Compress-Archive -Path outputs/ToolManager -DestinationPath $archive
           "sha256=$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
+          $frameworkArchive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64-framework-dependent.zip"
+          Compress-Archive -Path outputs/ToolManager-framework-dependent -DestinationPath $frameworkArchive
+          "framework-dependent-sha256=$((Get-FileHash -LiteralPath $frameworkArchive -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
 
       - name: Upload downloadable candidate
         id: candidate
         uses: actions/upload-artifact@v7
         with:
           name: ToolManager-${{ inputs.tag }}-win-x64-candidate-${{ github.run_attempt }}
-          path: artifacts/ToolManager-${{ inputs.tag }}-win-x64.zip
+          path: artifacts/*.zip
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -77,10 +83,12 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.candidate.outputs.artifact-url }}
           PACKAGE_SHA256: ${{ steps.package.outputs.sha256 }}
+          FRAMEWORK_SHA256: ${{ steps.package.outputs.framework-dependent-sha256 }}
         run: |
-          "Download and test the [Windows x64 candidate]($env:ARTIFACT_URL) before approving publication." >> $env:GITHUB_STEP_SUMMARY
+          "Download and test both [Windows x64 candidates]($env:ARTIFACT_URL) before approving publication. The framework-dependent version requires the .NET 10 Windows Desktop Runtime (x64)." >> $env:GITHUB_STEP_SUMMARY
           "Source commit: $env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
-          "SHA256: $env:PACKAGE_SHA256" >> $env:GITHUB_STEP_SUMMARY
+          "Self-contained ZIP SHA256: $env:PACKAGE_SHA256" >> $env:GITHUB_STEP_SUMMARY
+          "Framework-dependent ZIP SHA256: $env:FRAMEWORK_SHA256" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Require configured release approval
         run: |
@@ -118,10 +126,15 @@ jobs:
       - name: Verify candidate checksum
         env:
           EXPECTED_SHA256: ${{ needs.build.outputs.package-sha256 }}
+          EXPECTED_FRAMEWORK_SHA256: ${{ needs.build.outputs.framework-dependent-sha256 }}
         run: |
           $archive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
           if (!$env:EXPECTED_SHA256 -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $env:EXPECTED_SHA256) {
             throw 'Candidate checksum does not match the reviewed build.'
+          }
+          $frameworkArchive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64-framework-dependent.zip"
+          if (!$env:EXPECTED_FRAMEWORK_SHA256 -or (Get-FileHash -LiteralPath $frameworkArchive -Algorithm SHA256).Hash -ne $env:EXPECTED_FRAMEWORK_SHA256) {
+            throw 'Framework-dependent candidate checksum does not match the reviewed build.'
           }
 
       - name: Create GitHub release
@@ -133,5 +146,5 @@ jobs:
           $existingTag = gh api "repos/$env:GH_REPO/git/matching-refs/$tagPath"
           if ($LASTEXITCODE) { throw 'Could not check whether the release tag exists.' }
           if ($existingTag | ConvertFrom-Json | Where-Object { $_.ref -ceq "refs/tags/$env:RELEASE_TAG" }) { throw 'This tag already exists. Choose a new version.' }
-          gh release create $env:RELEASE_TAG "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip" --target $env:GITHUB_SHA --title "Tool Manager $env:RELEASE_TAG" --generate-notes
+          gh release create $env:RELEASE_TAG "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip" "artifacts/ToolManager-$env:RELEASE_TAG-win-x64-framework-dependent.zip" --target $env:GITHUB_SHA --title "Tool Manager $env:RELEASE_TAG" --generate-notes
           if ($LASTEXITCODE) { throw 'GitHub release creation failed.' }
