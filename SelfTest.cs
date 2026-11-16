@@ -16,6 +16,7 @@ internal static class SelfTest
             System.Xml.Linq.XNamespace taskNamespace = "http://schemas.microsoft.com/windows/2004/02/mit/task";
             string Value(string name) => definition.Descendants(taskNamespace + name).First().Value;
             Assert(Value("Command") == @"C:\Portable & tools\ToolManager.exe" && Value("WorkingDirectory") == @"C:\Portable & tools", "Startup executable paths preserve spaces and XML characters");
+            Assert(Value("Arguments") == "--autostart", "Scheduled startup opts into tool autostart");
             Assert(definition.Descendants(taskNamespace + "UserId").All(value => value.Value == "S-1-5-21-1-2-3-1001"), "Startup trigger and principal retain the original user through elevation");
             Assert(Value("LogonType") == "InteractiveToken" && Value("RunLevel") == "LeastPrivilege", "Startup uses the interactive desktop with normal privileges and no password");
             Assert(Value("ExecutionTimeLimit") == "PT0S" && Value("DisallowStartIfOnBatteries") == "false" && Value("StopIfGoingOnBatteries") == "false", "Startup works on battery without a runtime limit");
@@ -51,6 +52,19 @@ internal static class SelfTest
                 await Wait(() => !r.Active);
                 return r;
             }
+
+            var automatic = Entry("Write-Output autostart-ok");
+            automatic.Autostart = true;
+            var manual = Entry("Write-Output manual-only");
+            var hidden = Entry("Write-Output hidden-only");
+            hidden.Autostart = true;
+            hidden.RestrictToPcs = true;
+            await m.AutostartAsync(false);
+            Assert(m.History.Count == 0, "Normal manager startup does not start any entries");
+            await m.AutostartAsync(true);
+            await Wait(() => m.History.All(r => !r.Active));
+            Assert(m.History.Count == 1 && m.History[0].ToolId == automatic.Id && m.History[0].Output.Contains("autostart-ok"), "Autostart runs only opted-in entries visible on this PC");
+            Assert(!manual.Autostart && Store.Clone(automatic).Autostart, "Autostart defaults off and survives configuration serialization");
 
             var invalidConfig = new Configuration();
             invalidConfig.Tools.Add(null!);

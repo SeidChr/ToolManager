@@ -21,6 +21,7 @@ internal sealed class SettingsWindow : Window
     private readonly StartupTask startupTask = new();
     private readonly Button addStartup;
     private readonly Button removeStartup;
+    private readonly Button resetStartup;
     private readonly TextBlock startupStatus = Ui.Text("Checking Task Scheduler...", 12);
     private readonly TextBox timeout;
     private readonly TextBox history;
@@ -60,12 +61,15 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Ui.Text("Startup", 20));
         body.Children.Add(Ui.Text("Start this copy of Tool Manager when the current user signs in after Windows starts. Changes apply immediately. Windows asks for administrator permission only if needed.", 12));
         var startupActions = new StackPanel { Orientation = Orientation.Horizontal };
-        this.addStartup = Ui.Button("Add startup task", () => _ = this.ChangeStartupAsync(true));
-        this.removeStartup = Ui.Button("Remove startup task", () => _ = this.ChangeStartupAsync(false));
+        this.addStartup = Ui.Button("Add startup task", () => _ = this.ChangeStartupAsync("add"));
+        this.removeStartup = Ui.Button("Remove startup task", () => _ = this.ChangeStartupAsync("remove"));
+        this.resetStartup = Ui.Button("Reset", () => _ = this.ChangeStartupAsync("reset"));
         this.addStartup.IsEnabled = false;
         this.removeStartup.IsEnabled = false;
+        this.resetStartup.IsEnabled = false;
         startupActions.Children.Add(this.addStartup);
         startupActions.Children.Add(this.removeStartup);
+        startupActions.Children.Add(this.resetStartup);
         body.Children.Add(startupActions);
         body.Children.Add(this.startupStatus);
         this.Activated += async (_, _) => await this.RefreshStartupAsync();
@@ -142,6 +146,7 @@ internal sealed class SettingsWindow : Window
         var revision = ++this.startupRevision;
         this.addStartup.IsEnabled = false;
         this.removeStartup.IsEnabled = false;
+        this.resetStartup.IsEnabled = false;
         try
         {
             var exists = await Task.Run(this.startupTask.Exists);
@@ -152,6 +157,7 @@ internal sealed class SettingsWindow : Window
 
             this.addStartup.IsEnabled = !exists;
             this.removeStartup.IsEnabled = exists;
+            this.resetStartup.IsEnabled = exists;
             this.startupStatus.Text = (exists ? "Startup task exists: " : "No startup task: ") + this.startupTask.Name;
         }
         catch (Exception e)
@@ -163,20 +169,21 @@ internal sealed class SettingsWindow : Window
         }
     }
 
-    private async Task ChangeStartupAsync(bool add)
+    private async Task ChangeStartupAsync(string action)
     {
         this.changingStartup = true;
         this.startupRevision++;
         this.addStartup.IsEnabled = false;
         this.removeStartup.IsEnabled = false;
+        this.resetStartup.IsEnabled = false;
         this.startupStatus.Text = "Updating startup task...";
         try
         {
-            await this.startupTask.ChangeAsync(add);
+            await this.startupTask.ChangeAsync(action);
         }
         catch (Win32Exception e) when (e.NativeErrorCode == 1223)
         {
-            // Canceling the Windows administrator prompt leaves the task unchanged.
+            // The user canceled the Windows administrator prompt.
         }
         catch (Exception e)
         {

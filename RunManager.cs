@@ -19,6 +19,19 @@ public sealed class RunManager
 
     public RunRecord? Current(string toolId) => this.active.GetValueOrDefault(toolId);
 
+    public async Task AutostartAsync(bool enabled)
+    {
+        if (!enabled)
+        {
+            return;
+        }
+
+        foreach (var entry in this.Config.Tools.Where(t => t.Autostart && t.Visible))
+        {
+            await this.StartAsync(entry);
+        }
+    }
+
     public Task<RunRecord> StartAsync(ToolEntry entry, string action = "Run")
     {
         if (this.IsActive(entry.Id))

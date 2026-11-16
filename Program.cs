@@ -9,14 +9,14 @@ internal static class Program
     {
         if (args.FirstOrDefault() == "--startup-task")
         {
-            if (args.Length != 3 || args[1] is not ("add" or "remove"))
+            if (args.Length != 3 || args[1] is not ("add" or "remove" or "reset"))
             {
                 return 1;
             }
 
             try
             {
-                new StartupTask(args[2]).Change(args[1] == "add");
+                new StartupTask(args[2]).Change(args[1]);
                 return 0;
             }
             catch (Exception e)
@@ -78,6 +78,7 @@ internal static class Program
                 MessageBox.Show(e.Exception.Message, "Tool Manager error");
                 e.Handled = true;
             };
+            app.Startup += async (_, _) => await manager.AutostartAsync(args.Contains("--autostart"));
             app.Run(window);
             return 0;
         }

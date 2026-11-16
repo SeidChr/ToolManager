@@ -8,6 +8,9 @@ public sealed class ToolEntry
     public string Behavior { get; set; } = "Managed";
     public string ShellId { get; set; } = "pwsh";
 
+    public bool Autostart
+    { get; set; }
+
     public bool Interactive
     { get; set; }
 

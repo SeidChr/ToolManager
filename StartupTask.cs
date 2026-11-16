@@ -36,11 +36,11 @@ internal sealed class StartupTask
         });
     }
 
-    public async Task ChangeAsync(bool add)
+    public async Task ChangeAsync(string action)
     {
         try
         {
-            await Task.Run(() => this.Change(add));
+            await Task.Run(() => this.Change(action));
         }
         catch (Exception e) when (e is UnauthorizedAccessException || e.HResult == unchecked((int)0x80070005))
         {
@@ -51,7 +51,7 @@ internal sealed class StartupTask
                 WorkingDirectory = Path.GetDirectoryName(this.executable),
             };
             start.ArgumentList.Add("--startup-task");
-            start.ArgumentList.Add(add ? "add" : "remove");
+            start.ArgumentList.Add(action);
             start.ArgumentList.Add(this.userSid);
             using var helper = Process.Start(start) ?? throw new InvalidOperationException("Could not start the administrator helper.");
             await helper.WaitForExitAsync();
@@ -62,17 +62,16 @@ internal sealed class StartupTask
         }
     }
 
-    public void Change(bool add)
+    public void Change(string action)
     {
+        if (action is not ("add" or "remove" or "reset"))
+        {
+            throw new ArgumentException("Unknown startup task action.", nameof(action));
+        }
+
         this.WithFolder(folder =>
         {
-            if (add)
-            {
-                // TASK_CREATE prevents replacing an existing task, even after a stale UI check.
-                object task = folder.RegisterTask(this.Name, this.Definition(), 2, this.userSid, null, 3, null);
-                Marshal.FinalReleaseComObject(task);
-            }
-            else
+            if (action is "remove" or "reset")
             {
                 try
                 {
@@ -82,6 +81,13 @@ internal sealed class StartupTask
                 {
                     // A task removed outside Settings is already in the requested state.
                 }
+            }
+
+            if (action is "add" or "reset")
+            {
+                // TASK_CREATE prevents replacing an existing task, even after a stale UI check.
+                object task = folder.RegisterTask(this.Name, this.Definition(), 2, this.userSid, null, 3, null);
+                Marshal.FinalReleaseComObject(task);
             }
 
             return true;
@@ -116,6 +122,7 @@ internal sealed class StartupTask
                 Element("Exec", new object[]
                 {
                     Element("Command", this.executable),
+                    Element("Arguments", "--autostart"),
                     Element("WorkingDirectory", Path.GetDirectoryName(this.executable)!),
                 }))).ToString();
     }

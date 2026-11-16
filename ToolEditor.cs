@@ -33,6 +33,13 @@ internal sealed class ToolEditor : Window
         });
         var name = Ui.Input(draft.Name);
         Ui.Field(body, "Name", name);
+        var autostart = new CheckBox
+        {
+            Content = "Autostart when Tool Manager starts with --autostart",
+            IsChecked = draft.Autostart,
+            Margin = new Thickness(5),
+        };
+        body.Children.Add(autostart);
         var mode = new ComboBox
         {
             ItemsSource = new[] { "Installed", "Bundled" },
@@ -107,6 +114,7 @@ internal sealed class ToolEditor : Window
             try
             {
                 draft.Name = name.Text.Trim();
+                draft.Autostart = autostart.IsChecked == true;
                 draft.Mode = (string)mode.SelectedItem;
                 draft.Behavior = (string)behavior.SelectedItem;
                 draft.ShellId = (shell.SelectedItem as ShellProfile)?.Id ?? string.Empty;

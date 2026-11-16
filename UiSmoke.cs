@@ -143,7 +143,7 @@ internal static class UiSmoke
                     await Task.Delay(30);
                 }
 
-                if (startupButtons.Length != 2 || startupButtons[0].IsEnabled != !exists || startupButtons[1].IsEnabled != exists)
+                if (startupButtons.Length != 3 || startupButtons[0].IsEnabled != !exists || startupButtons[1].IsEnabled != exists || startupButtons[2].IsEnabled != exists)
                 {
                     throw new Exception("Startup buttons do not match the live scheduler task state.");
                 }
