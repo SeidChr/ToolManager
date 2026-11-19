@@ -26,7 +26,7 @@ internal static class Program
             }
             catch (Exception e)
             {
-                MessageBox.Show(e.Message, "Startup task", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(e.Message, AppIdentity.Name + " startup task", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;
             }
         }
@@ -59,10 +59,15 @@ internal static class Program
             return UiSmoke.Run();
         }
 
-        using var mutex = new Mutex(true, "Local\\PortableToolManager-" + Environment.UserName, out var first);
+        var hidden = args.Contains("--hidden");
+        using var mutex = new Mutex(true, AppIdentity.InstanceName, out var first);
         if (!first)
         {
-            MessageBox.Show("Tool Manager is already running. Open it from the notification area.", "Tool Manager");
+            if (!hidden)
+            {
+                MessageBox.Show(AppIdentity.Name + " is already running. Open it from the notification area.", AppIdentity.Name);
+            }
+
             return 0;
         }
 
@@ -78,18 +83,27 @@ internal static class Program
         {
             var manager = new RunManager(Store.Load());
             var window = new MainWindow(manager);
+            app.MainWindow = window;
             app.DispatcherUnhandledException += (_, e) =>
             {
-                MessageBox.Show(e.Exception.Message, "Tool Manager error");
+                MessageBox.Show(e.Exception.Message, AppIdentity.Name + " error");
                 e.Handled = true;
             };
-            app.Startup += async (_, _) => await manager.AutostartAsync(args.Contains("--autostart"));
-            app.Run(window);
+            app.Startup += async (_, _) =>
+            {
+                if (!hidden)
+                {
+                    window.ShowPopup();
+                }
+
+                await manager.AutostartAsync(args.Contains("--autostart"));
+            };
+            app.Run();
             return 0;
         }
         catch (Exception e)
         {
-            MessageBox.Show(e.Message + "\n\nConfiguration: " + Store.ConfigPath, "Tool Manager could not start");
+            MessageBox.Show(e.Message + "\n\nConfiguration: " + Store.ConfigPath, AppIdentity.Name + " could not start");
             return 1;
         }
     }

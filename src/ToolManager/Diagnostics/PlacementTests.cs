@@ -62,6 +62,9 @@ internal static class PlacementTests
         var actual = PopupPlacement.Detect(PopupPlacement.Cursor());
         Assert(actual.Monitor.Contains(actual.Anchor), "Live Windows monitor detection uses the cursor's monitor");
         results.Add($"OBSERVED Taskbar edge={actual.Edge}, bounds={actual.Taskbar}, monitor={actual.Monitor}, work={actual.Work}, DPI={actual.Dpi}");
+        var initial = PopupPlacement.Detect(PopupPlacement.PrimaryTaskbarAnchor());
+        Assert(initial.Monitor.Contains(initial.Anchor), "Initial taskbar anchor lies inside its monitor");
+        results.Add($"OBSERVED Initial placement taskbar edge={initial.Edge}, bounds={initial.Taskbar}, monitor={initial.Monitor}, anchor={initial.Anchor}");
         return results;
     }
 }

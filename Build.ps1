@@ -31,7 +31,7 @@ try {
     if ($Publish) {
         $staging = Join-Path $PSScriptRoot ('work\publish-' + [guid]::NewGuid().ToString('N'))
         $selfContained = (!$FrameworkDependent).ToString().ToLowerInvariant()
-        dotnet publish src/ToolManager/ToolManager.csproj -c Release -r win-x64 --self-contained $selfContained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=$selfContained -p:DebugType=None -p:DebugSymbols=false -o $staging
+        dotnet publish src/ToolManager/ToolManager.csproj -c Release -r win-x64 --self-contained $selfContained -p:ToolManagerProduction=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=$selfContained -p:DebugType=None -p:DebugSymbols=false -o $staging
         if ($LASTEXITCODE) { throw 'Publish failed.' }
         $publishedFiles = @(Get-ChildItem -LiteralPath $staging -File -Recurse)
         if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne 'ToolManager.exe') {

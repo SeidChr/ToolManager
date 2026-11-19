@@ -6,11 +6,13 @@ using System.Windows.Media;
 
 internal static class Ui
 {
-    public static ImageSource AppIcon { get; } = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/ToolManager.ico"));
+    public static string IconPath => AppIdentity.IsDevelopment ? "pack://application:,,,/Assets/ToolManager-dev.ico" : "pack://application:,,,/Assets/ToolManager.ico";
+
+    public static ImageSource AppIcon { get; } = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri(IconPath));
 
     public static System.Drawing.Icon TrayIcon()
     {
-        using var stream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/ToolManager.ico")).Stream;
+        using var stream = Application.GetResourceStream(new Uri(IconPath)).Stream;
         using var icon = new System.Drawing.Icon(stream, new System.Drawing.Size(32, 32));
         return (System.Drawing.Icon)icon.Clone();
     }

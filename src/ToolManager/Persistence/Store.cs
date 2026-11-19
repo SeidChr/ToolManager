@@ -19,6 +19,11 @@ public static class Store
     public static string ApplicationRoot(string directory)
     {
         var path = Path.GetFullPath(directory);
+        if (!AppIdentity.IsDevelopment)
+        {
+            return path;
+        }
+
         for (var parent = new DirectoryInfo(path); parent is not null; parent = parent.Parent)
         {
             if (!File.Exists(Path.Combine(parent.FullName, "src", "ToolManager", "ToolManager.csproj")))
@@ -31,7 +36,7 @@ public static class Store
                relative.Equals("bin", StringComparison.OrdinalIgnoreCase) || relative.StartsWith("bin\\", StringComparison.OrdinalIgnoreCase) ||
                relative.Equals("work\\build", StringComparison.OrdinalIgnoreCase))
             {
-                return Path.Combine(parent.FullName, "outputs", "ToolManager");
+                return Path.Combine(parent.FullName, "outputs", "ToolManager-dev");
             }
 
             break;

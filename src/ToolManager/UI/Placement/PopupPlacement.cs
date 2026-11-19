@@ -16,6 +16,31 @@ internal static class PopupPlacement
         return new(point.X, point.Y);
     }
 
+    public static PixelPoint PrimaryTaskbarAnchor()
+    {
+        var taskbar = FindWindow("Shell_TrayWnd", null);
+        var monitor = MonitorFromWindow(taskbar, 1);
+        if (monitor == nint.Zero)
+        {
+            monitor = MonitorFromPoint(default, 1);
+        }
+
+        var bounds = ReadMonitor(monitor).Monitor.Pixels;
+        if (taskbar != nint.Zero)
+        {
+            var notificationArea = FindWindowEx(taskbar, nint.Zero, "TrayNotifyWnd", null);
+            if ((GetWindowRect(notificationArea, out var rect) && rect.Pixels.Width > 0 && rect.Pixels.Height > 0) || GetWindowRect(taskbar, out rect))
+            {
+                // Auto-hidden taskbars can extend outside their monitor.
+                return new(
+                    Math.Clamp(rect.Left + (rect.Pixels.Width / 2), bounds.Left, bounds.Right - 1),
+                    Math.Clamp(rect.Top + (rect.Pixels.Height / 2), bounds.Top, bounds.Bottom - 1));
+            }
+        }
+
+        return new(bounds.Right - Math.Min(32, bounds.Width), bounds.Bottom - 1);
+    }
+
     public static TaskbarEdge Edge(PixelRect monitor, PixelRect bar)
     {
         if (bar.Width >= bar.Height)
@@ -34,8 +59,7 @@ internal static class PopupPlacement
             Y = anchor.Y,
         };
         var monitor = MonitorFromPoint(point, 2);
-        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
-        Native.Check(GetMonitorInfo(monitor, ref info));
+        var info = ReadMonitor(monitor);
         var bounds = info.Monitor.Pixels;
         var bars = new List<PixelRect>();
         void Add(nint window, bool known)
@@ -166,8 +190,17 @@ internal static class PopupPlacement
     [DllImport("user32")]
     private static extern nint MonitorFromPoint(Point point, uint flags);
 
+    [DllImport("user32")]
+    private static extern nint MonitorFromWindow(nint window, uint flags);
+
     [DllImport("user32", CharSet = CharSet.Unicode)]
     private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+
+    [DllImport("user32", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindow(string className, string? windowName);
+
+    [DllImport("user32", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindowEx(nint parent, nint childAfter, string className, string? windowName);
 
     [DllImport("user32")]
     private static extern bool EnumWindows(EnumWindow callback, nint parameter);
@@ -192,6 +225,13 @@ internal static class PopupPlacement
 
     [DllImport("user32", SetLastError = true)]
     private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
+
+    private static MonitorInfo ReadMonitor(nint monitor)
+    {
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        Native.Check(GetMonitorInfo(monitor, ref info));
+        return info;
+    }
 
     private static long Distance(PixelRect r, PixelPoint p)
     {

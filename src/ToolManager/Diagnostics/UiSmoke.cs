@@ -94,7 +94,7 @@ internal static class UiSmoke
                 }
 
                 var checks = PlacementTests.Run();
-                var icons = new IconBitmapDecoder(new Uri("pack://application:,,,/Assets/ToolManager.ico"), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                var icons = new IconBitmapDecoder(new Uri(Ui.IconPath), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
                 foreach (var size in new[] { 16, 20, 24, 32, 40, 48, 64, 128, 256 })
                 {
                     if (!icons.Frames.Any(frame => frame.PixelWidth == size && frame.PixelHeight == size))
@@ -113,6 +113,12 @@ internal static class UiSmoke
 
                 checks.Add("PASS Embedded app icon includes all nine sizes from 16 to 256px; native tray icon loads at 32px.");
                 var main = new MainWindow(manager, preview: true);
+                if (main.Title != AppIdentity.Name || main.IsVisible)
+                {
+                    throw new Exception("The tray window must start hidden with the build-specific title.");
+                }
+
+                checks.Add("PASS Constructing the tray window leaves it hidden and gives it the build-specific title.");
                 var anchor = PopupPlacement.Cursor();
                 var detected = PopupPlacement.Detect(anchor);
                 var nativeBounds = PopupPlacement.Position(main, anchor);
@@ -184,6 +190,8 @@ internal static class UiSmoke
                 }
 
                 checks.Add("PASS Console output and input use fixed black templates without hover/focus triggers.");
+                await CheckStartKeepsDispatcherAvailableAsync(folder);
+                checks.Add("PASS Start publishes an active run on the dispatcher before shell preparation finishes.");
                 checks.Add("PASS WPF windows constructed and rendered offscreen.");
                 await File.WriteAllLinesAsync(Path.Combine(folder, "result.txt"), checks);
             }
@@ -199,6 +207,31 @@ internal static class UiSmoke
         });
         app.Run();
         return result;
+    }
+
+    private static async Task CheckStartKeepsDispatcherAvailableAsync(string folder)
+    {
+        var config = new Configuration();
+        config.Shells[0].Executable = Path.Combine(folder, "missing-" + Guid.NewGuid().ToString("N") + ".exe");
+        var manager = new RunManager(config);
+        var tool = new ToolEntry { ShellId = config.Shells[0].Id, Command = "exit 0" };
+        var start = manager.StartAsync(tool);
+        if (!start.IsCompletedSuccessfully || manager.Current(tool.Id) is not { Active: true, State: "Starting" })
+        {
+            throw new Exception("Start must return a pending run before shell preparation reports a failure.");
+        }
+
+        var run = await start;
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (run.Active && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(30);
+        }
+
+        if (run.Active || run.State != "Failed" || !run.Output.Contains("Shell not found:", StringComparison.Ordinal))
+        {
+            throw new Exception("Expected the shell preparation failure to reach the run after the dispatcher resumed.");
+        }
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

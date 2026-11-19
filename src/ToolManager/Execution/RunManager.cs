@@ -140,6 +140,47 @@ public sealed class RunManager
         }
     }
 
+    private static string CreateRequest(
+        string directory,
+        string root,
+        (string Executable, string Kind, bool LoadProfile) profile,
+        string workingDirectory,
+        string script,
+        bool interactive,
+        int timeout)
+    {
+        var shell = FindShell(profile.Executable, root);
+        workingDirectory = Path.GetFullPath(Path.Combine(root, workingDirectory));
+        if (!Directory.Exists(workingDirectory))
+        {
+            throw new DirectoryNotFoundException("Working directory does not exist: " + workingDirectory);
+        }
+
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, profile.Kind == "CMD" ? "command.cmd" : "command.ps1");
+
+        // BOM preserves non-ASCII scripts in Windows PowerShell 5.1.
+        script = profile.Kind == "CMD" ? "@chcp 65001 >nul\r\n" + script : "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\nif (Get-Variable PSStyle -ErrorAction Ignore) { $PSStyle.OutputRendering = 'PlainText' }\n" + script;
+        File.WriteAllText(path, script, profile.Kind == "CMD" ? new UTF8Encoding(false) : new UTF8Encoding(true));
+        var command = profile.Kind == "CMD"
+            ? $"\"{shell}\" /d /s {(interactive ? "/k" : "/c")} \"\"{path}\"\""
+            : $"\"{shell}\" -NoLogo {(profile.LoadProfile ? string.Empty : "-NoProfile")} {(interactive ? "-NoExit" : "-NonInteractive")} -File \"{path}\"";
+        var requestPath = Path.Combine(directory, "request.json");
+        File.WriteAllText(requestPath, JsonSerializer.Serialize(
+            new RunRequest
+            {
+                Root = root,
+                Shell = shell,
+                CommandLine = command,
+                Directory = workingDirectory,
+                Timeout = timeout,
+                Interactive = interactive,
+            },
+            Store.Json));
+
+        return requestPath;
+    }
+
     private static void DeleteRunDirectory(string? directory)
     {
         if (directory is null)
@@ -153,19 +194,19 @@ public sealed class RunManager
         }
         catch (IOException)
         {
-            // A tool or sync client can still hold a temporary run file open.
+            // A tool can still hold a temporary run file open.
         }
         catch (UnauthorizedAccessException)
         {
-            // Temporary files stay inside the portable root if cleanup is denied.
+            // Files stay in the Windows temporary directory if cleanup is denied.
         }
     }
 
-    private static string FindShell(string executable)
+    private static string FindShell(string executable, string root)
     {
         if (Path.IsPathRooted(executable) || executable.Contains('\\') || executable.Contains('/'))
         {
-            var path = Store.Resolve(executable);
+            var path = Path.GetFullPath(Path.Combine(root, executable));
             if (!File.Exists(path))
             {
                 throw new FileNotFoundException("Shell not found: " + path);
@@ -234,55 +275,35 @@ public sealed class RunManager
         }
     }
 
-    private async Task<string> CreateRequestAsync(ToolEntry entry, RunRecord record, string directory)
-    {
-        var profile = this.Config.Shells.First(s => s.Id == entry.ShellId);
-        var shell = FindShell(profile.Executable);
-        var workingDirectory = Store.Resolve(entry.WorkingDirectory);
-        if (!Directory.Exists(workingDirectory))
-        {
-            throw new DirectoryNotFoundException("Working directory does not exist: " + workingDirectory);
-        }
-
-        Directory.CreateDirectory(directory);
-        var script = record.Action switch
-        {
-            "Stop" => entry.StopCommand,
-            "Check" => entry.StatusCommand,
-            _ => entry.Command,
-        };
-        var path = Path.Combine(directory, profile.Kind == "CMD" ? "command.cmd" : "command.ps1");
-
-        // BOM preserves non-ASCII scripts in Windows PowerShell 5.1.
-        script = profile.Kind == "CMD" ? "@chcp 65001 >nul\r\n" + script : "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\nif (Get-Variable PSStyle -ErrorAction Ignore) { $PSStyle.OutputRendering = 'PlainText' }\n" + script;
-        await File.WriteAllTextAsync(path, script, profile.Kind == "CMD" ? new UTF8Encoding(false) : new UTF8Encoding(true));
-        var command = profile.Kind == "CMD"
-            ? $"\"{shell}\" /d /s {(entry.Interactive ? "/k" : "/c")} \"\"{path}\"\""
-            : $"\"{shell}\" -NoLogo {(profile.LoadProfile ? string.Empty : "-NoProfile")} {(entry.Interactive ? "-NoExit" : "-NonInteractive")} -File \"{path}\"";
-        var requestPath = Path.Combine(directory, "request.json");
-        await File.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(
-            new RunRequest
-            {
-                Root = Store.Root,
-                Shell = shell,
-                CommandLine = command,
-                Directory = workingDirectory,
-                Timeout = entry.StopTimeoutSeconds ?? this.Config.StopTimeoutSeconds,
-                Interactive = entry.Interactive,
-            },
-            Store.Json));
-
-        return requestPath;
-    }
-
     private async Task ExecuteAsync(ToolEntry entry, RunRecord record)
     {
         string? directory = null;
         Process? helper = null;
         try
         {
-            directory = Path.Combine(Store.Root, "data", Environment.MachineName, "runs", record.Id);
-            var requestPath = await this.CreateRequestAsync(entry, record, directory);
+            directory = Path.Combine(Path.GetTempPath(), "ToolManager", "runs", record.Id);
+            var root = Store.Root;
+            var profile = this.Config.Shells.First(s => s.Id == entry.ShellId);
+            var shell = (profile.Executable, profile.Kind, profile.LoadProfile);
+            var workingDirectory = entry.WorkingDirectory;
+            var interactive = record.Interactive;
+            var stopTimeout = entry.StopTimeoutSeconds ?? this.Config.StopTimeoutSeconds;
+            var script = record.Action switch
+            {
+                "Stop" => entry.StopCommand,
+                "Check" => entry.StatusCommand,
+                _ => entry.Command,
+            };
+
+            // Always return control to the dispatcher before updating the run after startup work.
+            var requestPath = await Task.Run(() => CreateRequest(directory, root, shell, workingDirectory, script, interactive, stopTimeout))
+                .ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.ForceYielding);
+            if (record.StopRequested)
+            {
+                record.State = "Stopped";
+                return;
+            }
+
             var pipeName = "toolmanager-" + record.Id;
             using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             var start = new ProcessStartInfo(Environment.ProcessPath!)
@@ -297,13 +318,7 @@ public sealed class RunManager
             start.ArgumentList.Add("--runner");
             start.ArgumentList.Add(requestPath);
             start.ArgumentList.Add(pipeName);
-            if (record.StopRequested)
-            {
-                record.State = "Stopped";
-                return;
-            }
-
-            helper = Process.Start(start) ?? throw new IOException("Could not start process runner.");
+            helper = await Task.Run(() => Process.Start(start)) ?? throw new IOException("Could not start process runner.");
             using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
             {
                 await pipe.WaitForConnectionAsync(timeout.Token);
@@ -420,8 +435,11 @@ public sealed class RunManager
             this.controls.Remove(record.Id);
             try
             {
-                await StopHelperAsync(helper);
-                DeleteRunDirectory(directory);
+                await Task.Run(async () =>
+                {
+                    await StopHelperAsync(helper);
+                    DeleteRunDirectory(directory);
+                });
             }
             catch (Exception exception)
             {

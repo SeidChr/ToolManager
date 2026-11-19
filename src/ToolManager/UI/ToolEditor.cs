@@ -12,7 +12,7 @@ internal sealed class ToolEditor : Window
         this.Background = SystemColors.WindowBrush;
         this.Foreground = SystemColors.WindowTextBrush;
         this.Icon = Ui.AppIcon;
-        this.Title = "Edit tool";
+        this.Title = "Edit tool - " + AppIdentity.Name;
         this.Width = 760;
         this.Height = 840;
         this.MinWidth = 560;

@@ -39,7 +39,7 @@ internal sealed class SettingsWindow : Window
         this.Foreground = SystemColors.WindowTextBrush;
         this.Result = Store.Clone(source);
         this.Icon = Ui.AppIcon;
-        this.Title = "Tool Manager settings";
+        this.Title = AppIdentity.Name + " settings";
         this.Width = 700;
         this.Height = 730;
         this.MinWidth = 540;
@@ -62,7 +62,7 @@ internal sealed class SettingsWindow : Window
         });
         this.Content = root;
         body.Children.Add(Ui.Text("Startup", 20));
-        body.Children.Add(Ui.Text("Start this copy of Tool Manager when the current user signs in after Windows starts. Changes apply immediately. Windows asks for administrator permission only if needed.", 12));
+        body.Children.Add(Ui.Text("Start this copy in the notification area when the current user signs in. Changes apply immediately. Windows asks for administrator permission only if needed.", 12));
         var startupActions = new StackPanel { Orientation = Orientation.Horizontal };
         this.addStartup = Ui.Button("Add startup task", () => _ = this.ChangeStartupAsync("add"));
         this.removeStartup = Ui.Button("Remove startup task", () => _ = this.ChangeStartupAsync("remove"));
@@ -132,12 +132,44 @@ internal sealed class SettingsWindow : Window
         Ui.Field(body, "Maximum output per run (KiB, 16-16384)", this.output);
         this.total = Ui.Input(this.Result.GlobalOutputLimitMiB.ToString());
         Ui.Field(body, "Maximum total retained output (MiB, 4-512)", this.total);
-        body.Children.Add(Ui.Text("Output history is kept in memory. All configuration and temporary execution files stay beside the application.\nConfiguration: " + Store.ConfigPath, 12));
+        body.Children.Add(Ui.Text("Output history is kept in memory. Temporary run files use the Windows temporary folder.\nConfiguration: " + Store.ConfigPath, 12));
+        var openConfig = Ui.Button("Show configuration in File Explorer", OpenConfigurationLocation);
+        openConfig.HorizontalAlignment = HorizontalAlignment.Left;
+        body.Children.Add(openConfig);
         this.Refresh();
     }
 
     public Configuration Result
     { get; }
+
+    private static void OpenConfigurationLocation()
+    {
+        try
+        {
+            var path = Store.ConfigPath;
+            var start = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"));
+            if (File.Exists(path))
+            {
+                start.Arguments = $"/select,\"{path}\"";
+            }
+            else
+            {
+                var directory = Path.GetDirectoryName(path)!;
+                if (!Directory.Exists(directory))
+                {
+                    throw new DirectoryNotFoundException("Configuration folder does not exist: " + directory);
+                }
+
+                start.ArgumentList.Add(directory);
+            }
+
+            using var explorer = Process.Start(start);
+        }
+        catch (Exception e)
+        {
+            Ui.Error(e);
+        }
+    }
 
     private async Task RefreshStartupAsync()
     {

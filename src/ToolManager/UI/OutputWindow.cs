@@ -52,7 +52,7 @@ internal sealed class OutputWindow : Window
         this.Foreground = SystemColors.WindowTextBrush;
         this.tool = tool;
         this.Icon = Ui.AppIcon;
-        this.Title = tool.Name + " - Output";
+        this.Title = tool.Name + " - Output - " + AppIdentity.Name;
         this.Width = 820;
         this.Height = 510;
         Ui.ConsoleTextBox(this.output);

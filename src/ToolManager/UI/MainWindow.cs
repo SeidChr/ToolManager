@@ -16,6 +16,7 @@ internal sealed class MainWindow : Window
     private readonly System.Drawing.Icon trayIcon;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool exiting;
+    private bool openingSettings;
     private string signature = string.Empty;
     private PixelPoint? trayAnchor;
 
@@ -25,7 +26,7 @@ internal sealed class MainWindow : Window
         this.Background = SystemColors.WindowBrush;
         this.Foreground = SystemColors.WindowTextBrush;
         this.Icon = Ui.AppIcon;
-        this.Title = "Tool Manager";
+        this.Title = AppIdentity.Name;
         this.Width = 620;
         this.Height = 430;
         this.MinWidth = 460;
@@ -33,10 +34,10 @@ internal sealed class MainWindow : Window
         this.ShowInTaskbar = true;
         var root = new DockPanel { Margin = new Thickness(10) };
         var header = new DockPanel();
-        var settings = Ui.Button("Settings", this.OpenSettings);
+        var settings = Ui.Button("Settings", async () => await this.OpenSettingsAsync());
         DockPanel.SetDock(settings, Dock.Right);
         header.Children.Add(settings);
-        header.Children.Add(Ui.Text("Tool Manager", 22));
+        header.Children.Add(Ui.Text(AppIdentity.Name, 22));
         DockPanel.SetDock(header, Dock.Top);
         root.Children.Add(header);
         var footer = new StackPanel
@@ -58,7 +59,7 @@ internal sealed class MainWindow : Window
         this.tray = new Forms.NotifyIcon
         {
             Icon = this.trayIcon,
-            Text = "Tool Manager",
+            Text = AppIdentity.Name,
             Visible = !preview,
         };
         this.tray.MouseDown += (_, _) => this.trayAnchor = PopupPlacement.Cursor();
@@ -71,7 +72,7 @@ internal sealed class MainWindow : Window
         };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Open", null, (_, _) => this.Dispatcher.Invoke(this.ShowPopup));
-        menu.Items.Add("Settings", null, (_, _) => this.Dispatcher.Invoke(this.OpenSettings));
+        menu.Items.Add("Settings", null, (_, _) => this.Dispatcher.Invoke(async () => await this.OpenSettingsAsync()));
         menu.Items.Add("Exit", null, (_, _) => this.Dispatcher.Invoke(async () => await this.ExitAsync()));
         this.tray.ContextMenuStrip = menu;
         this.Closing += (_, e) =>
@@ -85,13 +86,16 @@ internal sealed class MainWindow : Window
         this.timer.Tick += (_, _) => this.Refresh();
         this.timer.Start();
         this.Refresh();
-        this.Loaded += (_, _) => this.Position();
     }
 
-    private void Position()
+    internal void ShowPopup()
     {
-        this.trayAnchor ??= PopupPlacement.Cursor();
-        PopupPlacement.Position(this, this.trayAnchor.Value);
+        var anchor = this.trayAnchor ?? PopupPlacement.PrimaryTaskbarAnchor();
+        this.WindowState = WindowState.Normal;
+        PopupPlacement.Position(this, anchor);
+        this.Show();
+        PopupPlacement.Position(this, anchor);
+        this.Activate();
     }
 
     private void Toggle()
@@ -104,15 +108,6 @@ internal sealed class MainWindow : Window
         {
             this.ShowPopup();
         }
-    }
-
-    private void ShowPopup()
-    {
-        this.WindowState = WindowState.Normal;
-        this.Position();
-        this.Show();
-        this.Position();
-        this.Activate();
     }
 
     private string State(ToolEntry t)
@@ -205,27 +200,56 @@ internal sealed class MainWindow : Window
         this.Refresh();
     }
 
-    private void OpenSettings()
+    private async Task OpenSettingsAsync()
     {
-        if (this.manager.History.Any(r => r.Active))
+        if (this.openingSettings || this.exiting || !this.IsEnabled)
         {
-            MessageBox.Show("Stop active runs before changing configuration.", "Settings");
             return;
         }
 
-        var dialog = new SettingsWindow(this.manager.Config) { Owner = this };
-        if (dialog.ShowDialog() == true)
+        this.openingSettings = true;
+        this.rows.IsEnabled = false;
+        try
         {
-            this.manager.Config = dialog.Result;
-            this.manager.Prune();
-            this.signature = string.Empty;
-            this.Refresh();
+            var active = this.manager.History.Where(r => r.Active).ToArray();
+            if (active.Length > 0)
+            {
+                const string prompt = "Stop all active runs and open Settings? Each run receives Ctrl+C and has its configured grace period before forced termination. External targets controlled by custom scripts may continue running.";
+                if (MessageBox.Show(prompt, "Open Settings", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) != MessageBoxResult.OK)
+                {
+                    return;
+                }
+
+                await this.manager.StopAllAsync();
+                if (active.Any(run => run.State == "Failed"))
+                {
+                    throw new InvalidOperationException("A run reported an error while stopping. See its output for details.");
+                }
+            }
+
+            var dialog = new SettingsWindow(this.manager.Config) { Owner = this.IsVisible ? this : null };
+            if (dialog.ShowDialog() == true)
+            {
+                this.manager.Config = dialog.Result;
+                this.manager.Prune();
+                this.signature = string.Empty;
+                this.Refresh();
+            }
+        }
+        catch (Exception e)
+        {
+            Ui.Error(e);
+        }
+        finally
+        {
+            this.rows.IsEnabled = true;
+            this.openingSettings = false;
         }
     }
 
     private async Task ExitAsync()
     {
-        if (this.exiting)
+        if (this.exiting || this.openingSettings || !this.IsEnabled)
         {
             return;
         }

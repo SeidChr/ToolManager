@@ -17,7 +17,7 @@ internal sealed class StartupTask
         this.executable = Path.GetFullPath(executable ?? Environment.ProcessPath ?? throw new InvalidOperationException("Cannot locate the running application."));
     }
 
-    public string Name => "PortableToolManager-" + this.userSid + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(this.executable.ToUpperInvariant())))[..16];
+    public string Name => AppIdentity.TaskPrefix + this.userSid + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(this.executable.ToUpperInvariant())))[..16];
 
     public bool Exists()
     {
@@ -122,7 +122,7 @@ internal sealed class StartupTask
                 Element("Exec", new object[]
                 {
                     Element("Command", this.executable),
-                    Element("Arguments", "--autostart"),
+                    Element("Arguments", "--autostart --hidden"),
                     Element("WorkingDirectory", Path.GetDirectoryName(this.executable)!),
                 }))).ToString();
     }

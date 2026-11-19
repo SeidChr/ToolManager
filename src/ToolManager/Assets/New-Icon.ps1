@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([switch]$Development)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 function New-RoundedPath([single]$x,[single]$y,[single]$width,[single]$height,[single]$radius) {
@@ -36,17 +36,23 @@ foreach ($iconSize in $iconSizes) {
     $graphics.DrawLine($pen,[single]29,[single]34,[single]42,[single]34)
     $graphics.DrawLine($pen,[single]29,[single]43,[single]35,[single]43)
     $navy = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#172554'))
-    $green = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml('#22c55e'))
+    $green = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml($(if ($Development) { '#f97316' } else { '#22c55e' })))
     $graphics.FillEllipse($navy,[single]35,[single]34,[single]26,[single]26)
     $graphics.FillEllipse($green,[single]38,[single]37,[single]20,[single]20)
-    $graphics.FillPolygon([Drawing.Brushes]::White,[Drawing.PointF[]]@([Drawing.PointF]::new(45,41),[Drawing.PointF]::new(54,47),[Drawing.PointF]::new(45,53)))
+    if ($Development) {
+        $font = [Drawing.Font]::new('Arial', [single]16, [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Pixel)
+        $graphics.DrawString('D', $font, [Drawing.Brushes]::White, [single]41, [single]38)
+        $font.Dispose()
+    } else {
+        $graphics.FillPolygon([Drawing.Brushes]::White,[Drawing.PointF[]]@([Drawing.PointF]::new(45,41),[Drawing.PointF]::new(54,47),[Drawing.PointF]::new(45,53)))
+    }
     $stream = [IO.MemoryStream]::new()
     $bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
     $images.Add($stream.ToArray())
-    if ($iconSize -eq 256) { $bitmap.Save((Join-Path $PSScriptRoot 'ToolManager.png'),[Drawing.Imaging.ImageFormat]::Png) }
+    if ($iconSize -eq 256) { $bitmap.Save((Join-Path $PSScriptRoot $(if ($Development) { 'ToolManager-dev.png' } else { 'ToolManager.png' })),[Drawing.Imaging.ImageFormat]::Png) }
     $stream.Dispose(); $graphics.Dispose(); $bitmap.Dispose(); $base.Dispose(); $gradient.Dispose(); $blue.Dispose(); $pen.Dispose(); $navy.Dispose(); $green.Dispose()
 }
-$target = [IO.File]::Create((Join-Path $PSScriptRoot 'ToolManager.ico'))
+$target = [IO.File]::Create((Join-Path $PSScriptRoot $(if ($Development) { 'ToolManager-dev.ico' } else { 'ToolManager.ico' })))
 $writer = [IO.BinaryWriter]::new($target)
 try {
     $writer.Write([uint16]0); $writer.Write([uint16]1); $writer.Write([uint16]$images.Count)

@@ -22,12 +22,30 @@ internal static class SelfTest
             System.Xml.Linq.XNamespace taskNamespace = "http://schemas.microsoft.com/windows/2004/02/mit/task";
             string Value(string name) => definition.Descendants(taskNamespace + name).First().Value;
             Assert(Value("Command") == @"C:\Portable & tools\ToolManager.exe" && Value("WorkingDirectory") == @"C:\Portable & tools", "Startup executable paths preserve spaces and XML characters");
-            Assert(Value("Arguments") == "--autostart", "Scheduled startup opts into tool autostart");
+            Assert(Value("Arguments") == "--autostart --hidden", "Scheduled startup opts into tool autostart with the manager window hidden");
             Assert(definition.Descendants(taskNamespace + "UserId").All(value => value.Value == "S-1-5-21-1-2-3-1001"), "Startup trigger and principal retain the original user through elevation");
             Assert(Value("LogonType") == "InteractiveToken" && Value("RunLevel") == "LeastPrivilege", "Startup uses the interactive desktop with normal privileges and no password");
             Assert(Value("ExecutionTimeLimit") == "PT0S" && Value("DisallowStartIfOnBatteries") == "false" && Value("StopIfGoingOnBatteries") == "false", "Startup works on battery without a runtime limit");
             Assert(startup.Name == new StartupTask("S-1-5-21-1-2-3-1001", @"c:\portable & tools\toolmanager.exe").Name, "Startup identity is stable across executable path casing");
             Assert(startup.Name != new StartupTask("S-1-5-21-1-2-3-1002", @"C:\Portable & tools\ToolManager.exe").Name && startup.Name != new StartupTask("S-1-5-21-1-2-3-1001", @"C:\Other\ToolManager.exe").Name, "Startup tasks are isolated by user and portable copy");
+            var (name, taskPrefix, package) = AppIdentity.IsDevelopment
+                ? ("Tool Manager (DEV)", "PortableToolManager-DEV-", "ToolManager-dev")
+                : ("Tool Manager", "PortableToolManager-", "ToolManager");
+            Assert(AppIdentity.Name == name && AppIdentity.TaskPrefix == taskPrefix, "The app and scheduler identify the build as " + name);
+            var instanceName = AppIdentity.InstanceName;
+            Assert(instanceName.StartsWith("Local\\" + taskPrefix + "S-", StringComparison.Ordinal) && startup.Name.StartsWith(taskPrefix + "S-", StringComparison.Ordinal), "The instance mutex and scheduled task use the build-specific prefix");
+            try
+            {
+                Store.Root = root.ToUpperInvariant() + Path.DirectorySeparatorChar;
+                Assert(AppIdentity.InstanceName == instanceName, "Instance identity is stable across configuration path casing and a trailing separator");
+                Store.Root = Path.Combine(root, "different-configuration");
+                Assert(AppIdentity.InstanceName != instanceName, "Different configuration roots have different instance identities");
+            }
+            finally
+            {
+                Store.Root = root;
+            }
+
             var c = new Configuration
             {
                 StopTimeoutSeconds = 1,
@@ -110,11 +128,13 @@ internal static class SelfTest
             }
 
             Assert(earlyRun.State is "Stopped" or "Force-stopped", "Stop during startup is delivered: " + earlyRun.State + " " + earlyRun.Output);
-            var script = Entry("Write-Output 'héllo 世界'; [Console]::Error.WriteLine('error stream'); Write-Output $env:TOOLMANAGER_ROOT; exit 7");
+            const string reportRunFiles = "Write-Output ('script-path=' + $PSCommandPath); Write-Output ('request-present=' + (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'request.json') -PathType Leaf)); ";
+            var script = Entry(reportRunFiles + "Write-Output 'héllo 世界'; [Console]::Error.WriteLine('error stream'); Write-Output $env:TOOLMANAGER_ROOT; exit 7");
             var result = await Run(script);
             Assert(result.ExitCode == 7 && result.State == "Failed", "PowerShell exit code is preserved");
             Assert(result.Output.Contains("héllo 世界") && result.Output.Contains("error stream"), "UTF-8 stdout and stderr captured");
             Assert(result.Output.Contains(root), "Portable manager root is available to scripts");
+            AssertRunFilesCleaned(result, root);
             foreach (var shell in new[] { "powershell", "cmd" })
             {
                 result = await Run(Entry(shell == "cmd" ? "@echo shell-ok\r\n@exit /b 3" : "Write-Output 'shell-ok'; exit 3", shell));
@@ -122,8 +142,9 @@ internal static class SelfTest
             }
 
             await File.WriteAllTextAsync(Path.Combine(root, "parameter test.ps1"), "param([string]$Value)\nWrite-Output $Value");
-            result = await Run(Entry("& '.\\parameter test.ps1' -Value 'argument with spaces'"));
+            result = await Run(Entry(reportRunFiles + "& '.\\parameter test.ps1' -Value 'argument with spaces'"));
             Assert(result.Output.Contains("argument with spaces") && result.ExitCode == 0, "Relative script path and parameters with spaces");
+            AssertRunFilesCleaned(result, root);
             result = await Run(Entry("1..3 | ForEach-Object { Write-Output ('line-' + $_) }\nWrite-Output 'done'"));
             Assert(result.Output.Contains("line-3") && result.Output.Contains("done"), "Multiline scripts and cmdlets");
             foreach (var failing in new[] { "DefinitelyMissingToolManagerCommand", "throw 'Expected terminating failure'", "[Console]::Error.Write('stderr only'); exit 5", "exit 0" })
@@ -308,10 +329,27 @@ internal static class SelfTest
             var source = Path.Combine(project, "src", "ToolManager");
             Directory.CreateDirectory(source);
             File.WriteAllText(Path.Combine(source, "ToolManager.csproj"), "<Project />");
-            var portableRoot = Path.Combine(project, "outputs", "ToolManager");
-            Assert(Store.ApplicationRoot(Path.Combine(source, "bin", "Release", "net10.0-windows")) == portableRoot, "Source-folder development builds use the existing portable configuration root");
-            Assert(Store.ApplicationRoot(Path.Combine(project, "work", "build")) == portableRoot, "Build script output uses the existing portable configuration root");
-            Assert(Store.ApplicationRoot(Path.Combine(project, "bin", "Release", "net10.0-windows")) == portableRoot, "Previous development output keeps the existing portable configuration root");
+            var portableRoot = Path.Combine(project, "outputs", package);
+            var sourceOutput = Path.Combine(source, "bin", "Release", "net10.0-windows");
+            var developmentOutputs = new[]
+            {
+                sourceOutput,
+                Path.Combine(project, "work", "build"),
+                Path.Combine(project, "bin", "Release", "net10.0-windows"),
+            };
+            foreach (var output in developmentOutputs)
+            {
+                var expected = AppIdentity.IsDevelopment ? portableRoot : output;
+                Assert(Store.ApplicationRoot(output) == expected, name + " resolves " + Path.GetRelativePath(project, output) + " to " + Path.GetRelativePath(project, expected));
+            }
+
+            Assert(Store.ApplicationRoot(portableRoot) == portableRoot, "Packaged output keeps its own configuration root");
+            if (!AppIdentity.IsDevelopment)
+            {
+                var publishOutput = Path.Combine(sourceOutput, "win-x64", "publish");
+                Assert(Store.ApplicationRoot(publishOutput) == publishOutput, "Production publish under source-folder bin keeps its own configuration root");
+            }
+
             Assert(Store.ApplicationRoot(Path.Combine(project, "work", "publish-candidate")) == Path.Combine(project, "work", "publish-candidate"), "Publish staging keeps its own portable root");
             Assert(Store.ApplicationRoot(Path.Combine(root, "copied-portable-app")) == Path.Combine(root, "copied-portable-app"), "Distributed copies keep their own portable root");
             c.Tools.Clear();
@@ -346,7 +384,6 @@ internal static class SelfTest
             c.Shells[0].Executable = "definitely-missing-shell.exe";
             result = await Run(portable);
             Assert(result.State == "Failed" && result.Output.Contains("not found in PATH"), "Missing shell produces actionable error");
-            Assert(!Directory.EnumerateFiles(root, "request.json", SearchOption.AllDirectories).Any(), "Temporary run requests cleaned up");
             await File.WriteAllLinesAsync(Path.Combine(AppContext.BaseDirectory, "self-test-results.txt"), Results);
             return 0;
         }
@@ -366,6 +403,17 @@ internal static class SelfTest
         }
 
         Results.Add("PASS " + message);
+    }
+
+    private static void AssertRunFilesCleaned(RunRecord result, string root)
+    {
+        const string prefix = "script-path=";
+        var scriptPath = result.Output.Split('\n').Single(line => line.StartsWith(prefix, StringComparison.Ordinal)).Trim()[prefix.Length..];
+        var relativePath = Path.GetRelativePath(root, scriptPath);
+        var relativeToTemp = Path.GetRelativePath(Path.GetTempPath(), scriptPath);
+        Assert(Path.IsPathFullyQualified(relativePath) || relativePath.StartsWith("..\\", StringComparison.Ordinal), "Generated script lives outside the portable root");
+        Assert(!Path.IsPathRooted(relativeToTemp) && !relativeToTemp.StartsWith("..\\", StringComparison.Ordinal) && result.Output.Contains("request-present=True", StringComparison.Ordinal), "Script and runner request share a directory under the user temp folder");
+        Assert(!Directory.Exists(Path.GetDirectoryName(scriptPath)), "Temporary run files are cleaned up after " + result.State.ToLowerInvariant());
     }
 
     private static async Task Wait(Func<bool> condition, int seconds = 20)
