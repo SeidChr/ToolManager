@@ -51,7 +51,7 @@ Output opens a separate window with the current and retained previous runs, stdo
 
 ### Run history
 
-History is in memory only, cleared on exit. Defaults: last 10 completed runs per entry, 2 MiB of UTF-16 text per run, and 64 MiB total retained text. Limits bound stored text, not total application memory or temporary UI copies. Old output is discarded with a visible marker. Closing an output window does not stop its run.
+History is in memory only, cleared on exit. Defaults: last 10 completed runs per entry, 2 MiB of UTF-16 text per run, and 64 MiB total retained text. Limits bound stored text, not total application memory or temporary UI copies. Old output is discarded with a visible marker. Closing an output window does not stop its run. For Cron tools, Output combines all retained occurrences into one live log in chronological order.
 
 ### Send input to a running shell
 

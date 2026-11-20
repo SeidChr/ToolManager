@@ -255,6 +255,8 @@ internal static class UiSmoke
 
                 checks.Add("PASS Console output and input use fixed black templates without hover/focus triggers.");
                 await CheckStartKeepsDispatcherAvailableAsync(folder);
+                await CheckCronOutputAsync();
+                checks.Add("PASS Cron output shows retained occurrences in order and updates when a new occurrence writes output.");
                 await CronTests.RunAsync();
                 checks.Add("PASS Cron validation, repeated execution, overlap prevention, and stop lifecycle.");
                 checks.Add("PASS Start publishes an active run on the dispatcher before shell preparation finishes.");
@@ -273,6 +275,60 @@ internal static class UiSmoke
         });
         app.Run();
         return result;
+    }
+
+    private static async Task CheckCronOutputAsync()
+    {
+        var manager = new RunManager(new Configuration());
+        var tool = new ToolEntry { Behavior = "Cron" };
+        var first = new RunRecord { ToolId = tool.Id, Ended = DateTime.Now, State = "Finished", ExitCode = 0 };
+        first.Append("first occurrence", 100);
+        var second = new RunRecord { ToolId = tool.Id, Ended = DateTime.Now, State = "Failed", ExitCode = 7 };
+        second.Append("second occurrence", 100);
+        manager.History.AddRange([first, second]);
+
+        var window = new OutputWindow(manager, tool);
+        try
+        {
+            var output = ((System.Windows.Controls.DockPanel)window.Content).Children.OfType<System.Windows.Controls.TextBox>().Single();
+            var firstIndex = output.Text.IndexOf("first occurrence", StringComparison.Ordinal);
+            var secondIndex = output.Text.IndexOf("second occurrence", StringComparison.Ordinal);
+            if (firstIndex < 0 || secondIndex <= firstIndex || !output.Text.Contains("Exit code 7", StringComparison.Ordinal))
+            {
+                throw new Exception("Cron output must show both occurrences in order, with the failed run's exit code.");
+            }
+
+            var third = new RunRecord { ToolId = tool.Id, State = "Running" };
+            third.Append("old output", 10);
+            manager.History.Add(third);
+            await WaitForOutputAsync(output, "old output");
+            third.Append("new output", 10);
+            await WaitForOutputAsync(output, "new output");
+            if (!output.Text.Contains("first occurrence", StringComparison.Ordinal) ||
+                !output.Text.Contains("second occurrence", StringComparison.Ordinal) ||
+                output.Text.Contains("old output", StringComparison.Ordinal))
+            {
+                throw new Exception("Live updates must keep both prior runs and replace truncated output from the active run.");
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static async Task WaitForOutputAsync(System.Windows.Controls.TextBox output, string expected)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (!output.Text.Contains(expected, StringComparison.Ordinal))
+        {
+            if (elapsed.Elapsed > TimeSpan.FromSeconds(5))
+            {
+                throw new TimeoutException("Cron output did not refresh for " + expected);
+            }
+
+            await Task.Delay(25);
+        }
     }
 
     private static async Task CheckStartKeepsDispatcherAvailableAsync(string folder)

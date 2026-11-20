@@ -9,8 +9,11 @@ using ToolManager.Models;
 
 internal sealed class OutputWindow : Window
 {
+    private const string NoRuns = "No runs yet. History is kept in memory until the manager exits.";
+
     private readonly RunManager manager;
     private readonly ToolEntry tool;
+    private readonly bool isCron;
     private readonly ComboBox runs = new()
     {
         Margin = new Thickness(4),
@@ -43,7 +46,7 @@ internal sealed class OutputWindow : Window
     private readonly TextBox input = Ui.Input(string.Empty);
     private readonly Button send;
     private bool sending;
-    private string ids = string.Empty;
+    private string refreshSignature = string.Empty;
 
     public OutputWindow(RunManager manager, ToolEntry tool)
     {
@@ -51,6 +54,7 @@ internal sealed class OutputWindow : Window
         this.Background = SystemColors.WindowBrush;
         this.Foreground = SystemColors.WindowTextBrush;
         this.tool = tool;
+        this.isCron = tool.Behavior == "Cron";
         this.Icon = Ui.AppIcon;
         this.Title = tool.Name + " - Output - " + AppIdentity.Name;
         this.Width = 820;
@@ -59,6 +63,7 @@ internal sealed class OutputWindow : Window
         Ui.ConsoleTextBox(this.input);
         var root = new DockPanel { Margin = new Thickness(8) };
         DockPanel.SetDock(this.runs, Dock.Top);
+        this.runs.Visibility = this.isCron ? Visibility.Collapsed : Visibility.Visible;
         root.Children.Add(this.runs);
         DockPanel.SetDock(this.detail, Dock.Top);
         root.Children.Add(this.detail);
@@ -78,7 +83,7 @@ internal sealed class OutputWindow : Window
         footer.Children.Add(Ui.Button("Close", this.Close));
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
-        var entry = new DockPanel();
+        var entry = new DockPanel { Visibility = this.isCron ? Visibility.Collapsed : Visibility.Visible };
         this.send = Ui.Button("Send", async () => await this.SendAsync());
         DockPanel.SetDock(this.send, Dock.Right);
         entry.Children.Add(this.send);
@@ -108,19 +113,50 @@ internal sealed class OutputWindow : Window
         this.Refresh();
     }
 
+    private static string ExitCode(RunRecord run) => run.ExitCode is int code ? $" | Exit code {code}" : string.Empty;
+
     private void Refresh()
     {
-        var records = this.manager.History.Where(r => r.ToolId == this.tool.Id).OrderByDescending(r => r.Started).ToArray();
+        var history = this.manager.History.Where(r => r.ToolId == this.tool.Id);
+        if (this.isCron)
+        {
+            this.UpdateCronOutput(history.ToArray());
+            return;
+        }
+
+        var records = history.OrderByDescending(r => r.Started).ToArray();
         var next = string.Join('|', records.Select(r => r.Id + r.State));
-        if (this.ids != next)
+        if (this.refreshSignature != next)
         {
             var selected = (this.runs.SelectedItem as RunRecord)?.Id;
-            this.ids = next;
+            this.refreshSignature = next;
             this.runs.ItemsSource = records;
             this.runs.SelectedItem = records.FirstOrDefault(r => r.Id == selected) ?? records.FirstOrDefault();
         }
 
         this.UpdateOutput();
+    }
+
+    private void UpdateCronOutput(RunRecord[] records)
+    {
+        this.detail.Text = records.Length == 0 ? NoRuns : $"Retained occurrences: {records.Length}";
+        var next = string.Join('|', records.Select(run => $"{run.Id}:{run.OutputVersion}:{run.State}:{run.ExitCode}:{run.Ended?.Ticks}"));
+        if (next == this.refreshSignature)
+        {
+            return;
+        }
+
+        this.refreshSignature = next;
+        var text = new StringBuilder();
+        foreach (var run in records)
+        {
+            var duration = run.Ended is DateTime ended ? $" | Duration {ended - run.Started:hh\\:mm\\:ss}" : string.Empty;
+            text.AppendLine($"[{run.Started:yyyy-MM-dd HH:mm:ss} | {run.State}{duration}{ExitCode(run)}]");
+            text.AppendLine(run.Output);
+            text.AppendLine();
+        }
+
+        this.SetOutput(text.ToString());
     }
 
     private async Task SendAsync()
@@ -153,15 +189,26 @@ internal sealed class OutputWindow : Window
     {
         var run = this.runs.SelectedItem as RunRecord;
         this.input.IsEnabled = this.send.IsEnabled = !this.sending && run is { Active: true, Interactive: true, State: "Running" };
-        this.detail.Text = run is null ? "No runs yet. History is kept in memory until the manager exits." : $"{run.Action} | {run.State} | Duration {(run.Ended ?? DateTime.Now) - run.Started:hh\\:mm\\:ss}" + (run.ExitCode is int c ? $" | Exit code {c}" : string.Empty);
-        var text = run?.Output ?? string.Empty;
-        if (text != this.output.Text)
+        this.detail.Text = run is null ? NoRuns : $"{run.Action} | {run.State} | Duration {(run.Ended ?? DateTime.Now) - run.Started:hh\\:mm\\:ss}" + ExitCode(run);
+        this.SetOutput(run?.Output ?? string.Empty);
+    }
+
+    private void SetOutput(string text)
+    {
+        if (text == this.output.Text)
         {
-            this.output.Text = text;
-            if (this.follow.IsChecked == true)
-            {
-                this.output.ScrollToEnd();
-            }
+            return;
+        }
+
+        var offset = this.output.VerticalOffset;
+        this.output.Text = text;
+        if (this.follow.IsChecked == true)
+        {
+            this.output.ScrollToEnd();
+        }
+        else if (this.isCron)
+        {
+            this.output.ScrollToVerticalOffset(offset);
         }
     }
 }

@@ -5,6 +5,7 @@ public sealed class RunRecord
     private readonly StringBuilder buffer = new();
 
     private bool truncated;
+    private int outputVersion;
 
     public string Id { get; } = Guid.NewGuid().ToString("N");
     public string ToolId { get; init; } = string.Empty;
@@ -52,6 +53,8 @@ public sealed class RunRecord
         }
     }
 
+    internal int OutputVersion => Volatile.Read(ref this.outputVersion);
+
     public void Append(string value, int maxChars)
     {
         lock (this.buffer)
@@ -63,6 +66,7 @@ public sealed class RunRecord
             }
 
             this.buffer.Append(value);
+            this.outputVersion++;
             if (this.buffer.Length > maxChars)
             {
                 this.buffer.Remove(0, this.buffer.Length - maxChars);
@@ -79,6 +83,7 @@ public sealed class RunRecord
             {
                 this.buffer.Remove(0, this.buffer.Length - maxChars);
                 this.truncated = true;
+                this.outputVersion++;
             }
         }
     }
