@@ -224,6 +224,21 @@ internal static class UiSmoke
                     }
                 }
 
+                var startAutostart = mainButtons.Single(button => button.Content as string == "Start autostart tools");
+                if (!startAutostart.IsEnabled)
+                {
+                    throw new Exception("The bulk-start button should be enabled when an idle autostart tool is visible.");
+                }
+
+                startAutostart.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                if (!manager.IsActive(tool.Id) || startAutostart.IsEnabled)
+                {
+                    throw new Exception("Bulk start should start the eligible tool and disable the button while it runs.");
+                }
+
+                await manager.StopAllAsync();
+                checks.Add("PASS Bulk start launches the eligible tool and disables the button while it is active.");
+
                 checks.Add("PASS Console output and input use fixed black templates without hover/focus triggers.");
                 await CheckStartKeepsDispatcherAvailableAsync(folder);
                 await CronTests.RunAsync();

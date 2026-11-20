@@ -14,6 +14,7 @@ internal sealed class MainWindow : Window
 {
     private readonly RunManager manager;
     private readonly StackPanel rows = new();
+    private readonly Button startAutostart;
     private readonly Forms.NotifyIcon tray;
     private readonly System.Drawing.Icon trayIcon;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
@@ -36,6 +37,9 @@ internal sealed class MainWindow : Window
         var settings = Ui.Button("Settings", async () => await this.OpenSettingsAsync());
         DockPanel.SetDock(settings, Dock.Right);
         header.Children.Add(settings);
+        this.startAutostart = Ui.Button("Start autostart tools", async () => await this.StartAutostartAsync());
+        DockPanel.SetDock(this.startAutostart, Dock.Right);
+        header.Children.Add(this.startAutostart);
         header.Children.Add(Ui.Text(AppIdentity.Name, 22));
         DockPanel.SetDock(header, Dock.Top);
         root.Children.Add(header);
@@ -147,7 +151,7 @@ internal sealed class MainWindow : Window
 
         if (t.Behavior == "Custom" && !run.Active)
         {
-            return run.Action == "Check" && run.State == "Finished" ? "Running" : run.Action == "Check" && run.ExitCode == 1 ? "Stopped" : "Unknown";
+            return RunManager.CustomTargetState(run);
         }
 
         return run.State;
@@ -156,6 +160,7 @@ internal sealed class MainWindow : Window
     private void Refresh()
     {
         var visible = this.manager.Config.Tools.Where(t => t.Visible).ToArray();
+        this.startAutostart.IsEnabled = !this.openingSettings && !this.exiting && visible.Any(this.manager.CanAutostart);
         var next = string.Join("|", visible.Select(t => t.Id + t.Name + this.State(t) + this.manager.IsActive(t.Id))) + this.manager.History.Count;
         if (next == this.signature)
         {
@@ -230,6 +235,25 @@ internal sealed class MainWindow : Window
         }
 
         this.signature = string.Empty;
+        this.Refresh();
+    }
+
+    private async Task StartAutostartAsync()
+    {
+        if (this.openingSettings || this.exiting || !this.IsEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            await this.manager.AutostartAsync(true);
+        }
+        catch (Exception e)
+        {
+            Ui.Error(e);
+        }
+
         this.Refresh();
     }
 
