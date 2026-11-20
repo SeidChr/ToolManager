@@ -12,8 +12,7 @@ internal sealed class OutputWindow : Window
     private const string NoRuns = "No runs yet. History is kept in memory until the manager exits.";
 
     private readonly RunManager manager;
-    private readonly ToolEntry tool;
-    private readonly bool isCron;
+    private readonly string toolId;
     private readonly ComboBox runs = new()
     {
         Margin = new Thickness(4),
@@ -44,26 +43,25 @@ internal sealed class OutputWindow : Window
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private readonly TextBlock detail = Ui.Text(string.Empty);
     private readonly TextBox input = Ui.Input(string.Empty);
+    private readonly DockPanel inputRow = new();
     private readonly Button send;
+    private bool isCron;
     private bool sending;
-    private string refreshSignature = string.Empty;
+    private string? refreshSignature;
 
     public OutputWindow(RunManager manager, ToolEntry tool)
     {
         this.manager = manager;
         this.Background = SystemColors.WindowBrush;
         this.Foreground = SystemColors.WindowTextBrush;
-        this.tool = tool;
-        this.isCron = tool.Behavior == "Cron";
+        this.toolId = tool.Id;
         this.Icon = Ui.AppIcon;
-        this.Title = tool.Name + " - Output - " + AppIdentity.Name;
         this.Width = 820;
         this.Height = 510;
         Ui.ConsoleTextBox(this.output);
         Ui.ConsoleTextBox(this.input);
         var root = new DockPanel { Margin = new Thickness(8) };
         DockPanel.SetDock(this.runs, Dock.Top);
-        this.runs.Visibility = this.isCron ? Visibility.Collapsed : Visibility.Visible;
         root.Children.Add(this.runs);
         DockPanel.SetDock(this.detail, Dock.Top);
         root.Children.Add(this.detail);
@@ -83,10 +81,9 @@ internal sealed class OutputWindow : Window
         footer.Children.Add(Ui.Button("Close", this.Close));
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
-        var entry = new DockPanel { Visibility = this.isCron ? Visibility.Collapsed : Visibility.Visible };
         this.send = Ui.Button("Send", async () => await this.SendAsync());
         DockPanel.SetDock(this.send, Dock.Right);
-        entry.Children.Add(this.send);
+        this.inputRow.Children.Add(this.send);
         this.input.Background = Brushes.Black;
         this.input.Foreground = Brushes.Gainsboro;
         this.input.CaretBrush = Brushes.White;
@@ -101,11 +98,12 @@ internal sealed class OutputWindow : Window
                 await this.SendAsync();
             }
         };
-        entry.Children.Add(this.input);
-        DockPanel.SetDock(entry, Dock.Bottom);
-        root.Children.Add(entry);
+        this.inputRow.Children.Add(this.input);
+        DockPanel.SetDock(this.inputRow, Dock.Bottom);
+        root.Children.Add(this.inputRow);
         root.Children.Add(this.output);
         this.Content = root;
+        this.ApplyTool(tool);
         this.runs.SelectionChanged += (_, _) => this.UpdateOutput();
         this.timer.Tick += (_, _) => this.Refresh();
         this.Closed += (_, _) => this.timer.Stop();
@@ -113,11 +111,42 @@ internal sealed class OutputWindow : Window
         this.Refresh();
     }
 
+    internal static void ShowForTool(RunManager manager, ToolEntry tool)
+    {
+        var existing = Application.Current.Windows.OfType<OutputWindow>().FirstOrDefault(window => window.toolId == tool.Id);
+        if (existing is null)
+        {
+            new OutputWindow(manager, tool).Show();
+            return;
+        }
+
+        existing.ApplyTool(tool);
+        existing.Refresh();
+        if (existing.WindowState == WindowState.Minimized)
+        {
+            existing.WindowState = WindowState.Normal;
+        }
+
+        existing.Activate();
+    }
+
     private static string ExitCode(RunRecord run) => run.ExitCode is int code ? $" | Exit code {code}" : string.Empty;
+
+    private void ApplyTool(ToolEntry tool)
+    {
+        this.Title = tool.Name + " - Output - " + AppIdentity.Name;
+        var cron = tool.Behavior == "Cron";
+        if (this.isCron != cron)
+        {
+            this.isCron = cron;
+            this.runs.Visibility = this.inputRow.Visibility = cron ? Visibility.Collapsed : Visibility.Visible;
+            this.refreshSignature = null;
+        }
+    }
 
     private void Refresh()
     {
-        var history = this.manager.History.Where(r => r.ToolId == this.tool.Id);
+        var history = this.manager.History.Where(r => r.ToolId == this.toolId);
         if (this.isCron)
         {
             this.UpdateCronOutput(history.ToArray());

@@ -47,7 +47,7 @@ Tasks are local to the PC and identified by user SID and executable path. Separa
 
 ## Output and lifecycle
 
-Output opens a separate window with the current and retained previous runs, stdout, marked stderr, duration, exit code, Copy, and Follow output. The output and input panes have a fixed black background, including while hovered or focused. PowerShell color formatting is disabled where supported, and ANSI/OSC terminal escapes are filtered incrementally from both output streams, including sequences split across pipe reads. Terminal cursor controls and interactive TUI applications are not emulated. Separate stdout/stderr streams cannot guarantee exact combined ordering. UTF-8 is configured for supplied shells; legacy executables with different encodings may display incorrectly.
+Output opens one window per tool with the current and retained previous runs, stdout, marked stderr, duration, exit code, Copy, and Follow output. Select Output again to bring that window forward or restore it if minimized. The output and input panes have a fixed black background, including while hovered or focused. PowerShell color formatting is disabled where supported, and ANSI/OSC terminal escapes are filtered incrementally from both output streams, including sequences split across pipe reads. Terminal cursor controls and interactive TUI applications are not emulated. Separate stdout/stderr streams cannot guarantee exact combined ordering. UTF-8 is configured for supplied shells; legacy executables with different encodings may display incorrectly.
 
 ### Run history
 

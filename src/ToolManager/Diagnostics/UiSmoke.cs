@@ -171,6 +171,9 @@ internal static class UiSmoke
                 }
 
                 checks.Add("PASS Main view keeps separate Start and Stop buttons enabled according to tool state.");
+                var outputButtons = mainButtons.Where(button => button.Content as string == "Output").ToArray();
+                CheckOutputWindows(manager, tool, outputButtons[0], outputButtons[1]);
+                checks.Add("PASS Output reuses and restores one window per tool, and reopens it after closing.");
                 var largeList = new Configuration();
                 for (var index = 0; index < 100; index++)
                 {
@@ -275,6 +278,57 @@ internal static class UiSmoke
         });
         app.Run();
         return result;
+    }
+
+    private static void CheckOutputWindows(RunManager manager, ToolEntry tool, System.Windows.Controls.Button firstButton, System.Windows.Controls.Button secondButton)
+    {
+        void Click(System.Windows.Controls.Button button) => button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+        try
+        {
+            Click(firstButton);
+            var first = Application.Current.Windows.OfType<OutputWindow>().Single();
+            first.WindowState = WindowState.Minimized;
+            Click(firstButton);
+            var reopened = Application.Current.Windows.OfType<OutputWindow>().ToArray();
+            if (reopened.Length != 1 || reopened[0] != first || first.WindowState == WindowState.Minimized)
+            {
+                throw new Exception("Clicking Output again must restore the existing window without making a duplicate.");
+            }
+
+            var editedTool = Store.Clone(tool);
+            editedTool.Name = "Renamed report exporter";
+            editedTool.Behavior = "Cron";
+            OutputWindow.ShowForTool(manager, editedTool);
+            var runPicker = ((System.Windows.Controls.DockPanel)first.Content).Children.OfType<System.Windows.Controls.ComboBox>().Single();
+            if (Application.Current.Windows.OfType<OutputWindow>().Single() != first ||
+                !first.Title.StartsWith(editedTool.Name, StringComparison.Ordinal) ||
+                runPicker.Visibility != Visibility.Collapsed)
+            {
+                throw new Exception("An edited tool must reuse its Output window with the updated title and behavior.");
+            }
+
+            Click(secondButton);
+            if (Application.Current.Windows.OfType<OutputWindow>().Count() != 2)
+            {
+                throw new Exception("Different tools must be able to show separate Output windows.");
+            }
+
+            first.Close();
+            Click(firstButton);
+            var windows = Application.Current.Windows.OfType<OutputWindow>().ToArray();
+            if (windows.Length != 2 || windows.Contains(first))
+            {
+                throw new Exception("Closing an Output window must allow the same tool to open a new one.");
+            }
+        }
+        finally
+        {
+            foreach (var window in Application.Current.Windows.OfType<OutputWindow>().ToArray())
+            {
+                window.Close();
+            }
+        }
     }
 
     private static async Task CheckCronOutputAsync()
