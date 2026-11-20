@@ -33,6 +33,8 @@ Use the shell and dependencies you would use for the same command in a console. 
 
 In **Settings > Startup**, choose **Add startup task**. Then enable **Autostart** for the tools you want Windows to launch at sign-in. Tool Manager stays in the tray and starts only the opted-in tools visible on that PC.
 
+Select **Start autostart tools** next to **Settings** to start the idle autostart tools visible on the current PC at any time.
+
 Set up the startup task once on each PC where you want it. If you move the folder, remove the task before moving it and add it again from the new location.
 
 ![Start the Tool Manager when you sign in.](docs/readme/startup.png)

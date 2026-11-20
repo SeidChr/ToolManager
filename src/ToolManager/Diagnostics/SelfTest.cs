@@ -85,9 +85,14 @@ internal static class SelfTest
             hidden.RestrictToPcs = true;
             await m.AutostartAsync(false);
             Assert(m.History.Count == 0, "Normal manager startup does not start any entries");
+            var runningTarget = new ToolEntry { Autostart = true, Behavior = "Custom" };
+            m.History.Add(new RunRecord { ToolId = runningTarget.Id, Action = "Check", Ended = DateTime.Now, State = "Finished" });
+            Assert(!m.CanAutostart(runningTarget), "Autostart skips Custom targets last reported as running");
+            m.History.Clear();
+            await m.AutostartAsync(true);
             await m.AutostartAsync(true);
             await Wait(() => m.History.All(r => !r.Active));
-            Assert(m.History.Count == 1 && m.History[0].ToolId == automatic.Id && m.History[0].Output.Contains("autostart-ok"), "Autostart runs only opted-in entries visible on this PC");
+            Assert(m.History.Count == 1 && m.History[0].ToolId == automatic.Id && m.History[0].Output.Contains("autostart-ok"), "Autostart runs only idle opted-in entries visible on this PC");
             Assert(!manual.Autostart && Store.Clone(automatic).Autostart, "Autostart defaults off and survives configuration serialization");
 
             var invalidConfig = new Configuration();

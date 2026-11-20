@@ -29,6 +29,7 @@ internal static class UiSmoke
         var tool = new ToolEntry
         {
             Name = "Report exporter",
+            Autostart = true,
             Command = "Write-Output 'Report completed'",
         };
         config.Tools.Add(tool);
@@ -188,6 +189,21 @@ internal static class UiSmoke
                         throw new Exception("Console template must keep both background layers black.");
                     }
                 }
+
+                var startAutostart = mainButtons.Single(button => button.Content as string == "Start autostart tools");
+                if (!startAutostart.IsEnabled)
+                {
+                    throw new Exception("The bulk-start button should be enabled when an idle autostart tool is visible.");
+                }
+
+                startAutostart.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                if (!manager.IsActive(tool.Id) || startAutostart.IsEnabled)
+                {
+                    throw new Exception("Bulk start should start the eligible tool and disable the button while it runs.");
+                }
+
+                await manager.StopAllAsync();
+                checks.Add("PASS Bulk start launches the eligible tool and disables the button while it is active.");
 
                 checks.Add("PASS Console output and input use fixed black templates without hover/focus triggers.");
                 await CheckStartKeepsDispatcherAvailableAsync(folder);

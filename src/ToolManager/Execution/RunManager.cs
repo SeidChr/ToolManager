@@ -28,7 +28,7 @@ public sealed class RunManager
             return;
         }
 
-        foreach (var entry in this.Config.Tools.Where(t => t.Autostart && t.Visible))
+        foreach (var entry in this.Config.Tools.Where(this.CanAutostart))
         {
             await this.StartAsync(entry);
         }
@@ -139,6 +139,17 @@ public sealed class RunManager
             over -= remove;
         }
     }
+
+    internal static string CustomTargetState(RunRecord? run) => run switch
+    {
+        { Action: "Check", State: "Finished" } => "Running",
+        { Action: "Check", ExitCode: 1 } => "Stopped",
+        _ => "Unknown",
+    };
+
+    internal bool CanAutostart(ToolEntry entry) =>
+        entry.Autostart && entry.Visible && !this.IsActive(entry.Id) &&
+        (entry.Behavior != "Custom" || CustomTargetState(this.History.LastOrDefault(run => run.ToolId == entry.Id)) != "Running");
 
     private static string CreateRequest(
         string directory,

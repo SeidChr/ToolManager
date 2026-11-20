@@ -32,6 +32,10 @@ All relative working-directory settings resolve from the manager folder, not the
 
 The main view always shows separate Start and Stop buttons. Start is enabled while idle; Stop is enabled while running, including an external Custom target reported as running by Check. Both are disabled while stopping. An unknown Custom status leaves Start enabled and Stop disabled.
 
+## Start autostart tools
+
+Select **Start autostart tools** next to **Settings** to start eligible tools immediately, including after returning from Settings. It skips tools hidden on this PC, active tools, and Custom targets last reported as running by **Check**.
+
 ## Start with Windows
 
 Settings > Startup provides Add startup task, Remove startup task and Reset. The task passes --autostart --hidden: opted-in tools start while the manager stays in the tray. Use Reset to update an existing task. Running ToolManager.exe --hidden also starts without showing a window, independently of --autostart. Add is enabled only when this copy's task is absent; Remove is enabled only when it exists. Status refreshes when Settings opens or regains focus. If Task Scheduler cannot be read, both buttons remain disabled and an error is shown.
