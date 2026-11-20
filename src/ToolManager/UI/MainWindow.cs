@@ -27,10 +27,7 @@ internal sealed class MainWindow : Window
         this.Foreground = SystemColors.WindowTextBrush;
         this.Icon = Ui.AppIcon;
         this.Title = AppIdentity.Name;
-        this.Width = 620;
-        this.Height = 430;
-        this.MinWidth = 460;
-        this.MinHeight = 250;
+        this.ResizeMode = ResizeMode.CanMinimize;
         this.ShowInTaskbar = true;
         var root = new DockPanel { Margin = new Thickness(10) };
         var header = new DockPanel();
@@ -92,10 +89,27 @@ internal sealed class MainWindow : Window
     {
         var anchor = this.trayAnchor ?? PopupPlacement.PrimaryTaskbarAnchor();
         this.WindowState = WindowState.Normal;
-        PopupPlacement.Position(this, anchor);
+        var location = PopupPlacement.Detect(anchor);
+        this.PositionPopup(location);
         this.Show();
-        PopupPlacement.Position(this, anchor);
+        this.PositionPopup(location);
         this.Activate();
+    }
+
+    internal PixelRect PositionPopup(PopupLocation location)
+    {
+        var scale = location.Dpi / 96d;
+        var limit = PopupPlacement.Calculate(location, int.MaxValue, int.MaxValue, (int)Math.Ceiling(PopupPlacement.GapDip * scale));
+        var content = (FrameworkElement)this.Content;
+        var frameWidth = 2 * SystemParameters.FixedFrameVerticalBorderWidth;
+        var frameHeight = SystemParameters.WindowCaptionHeight + (2 * SystemParameters.FixedFrameHorizontalBorderHeight);
+
+        content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var naturalWidth = content.DesiredSize.Width + frameWidth + SystemParameters.VerticalScrollBarWidth;
+        this.Width = Math.Min(limit.Width / scale, Math.Max(620, Math.Ceiling(naturalWidth)));
+        content.Measure(new Size(Math.Max(1, this.Width - frameWidth), double.PositiveInfinity));
+        this.Height = Math.Min(limit.Height / scale, Math.Max(120, Math.Ceiling(content.DesiredSize.Height + frameHeight)));
+        return PopupPlacement.Position(this, location);
     }
 
     private void Toggle()
@@ -234,6 +248,10 @@ internal sealed class MainWindow : Window
                 this.manager.Prune();
                 this.signature = string.Empty;
                 this.Refresh();
+                if (this.IsVisible && this.WindowState == WindowState.Normal)
+                {
+                    this.PositionPopup(PopupPlacement.Detect(this.trayAnchor ?? PopupPlacement.PrimaryTaskbarAnchor()));
+                }
             }
         }
         catch (Exception e)
