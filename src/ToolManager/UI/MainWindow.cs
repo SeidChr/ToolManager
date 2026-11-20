@@ -114,7 +114,7 @@ internal sealed class MainWindow : Window
 
     private void Toggle()
     {
-        if (this.IsVisible && this.IsActive)
+        if (this.IsVisible && this.WindowState != WindowState.Minimized)
         {
             this.Hide();
         }
