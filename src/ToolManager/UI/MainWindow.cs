@@ -34,8 +34,8 @@ internal sealed class MainWindow : Window
         this.ResizeMode = ResizeMode.CanMinimize;
         this.ShowInTaskbar = true;
 
-        // A new WPF window defaults to Collapsed, which skips measurement.
-        this.Visibility = Visibility.Hidden;
+        // Hide synchronously so the window can be measured without queuing a hide after its first show.
+        this.Hide();
         var root = new DockPanel { Margin = new Thickness(10) };
         var header = new DockPanel();
         var settings = Ui.Button("Settings", async () => await this.OpenSettingsAsync());
@@ -74,7 +74,7 @@ internal sealed class MainWindow : Window
         {
             if (e.Button == Forms.MouseButtons.Left)
             {
-                this.Dispatcher.Invoke(this.Toggle);
+                this.Dispatcher.Invoke(this.TogglePopup);
             }
         };
         var menu = new Forms.ContextMenuStrip();
@@ -122,7 +122,7 @@ internal sealed class MainWindow : Window
         return PopupPlacement.Position(this, location);
     }
 
-    private void Toggle()
+    internal void TogglePopup()
     {
         if (this.IsVisible && this.WindowState != WindowState.Minimized)
         {

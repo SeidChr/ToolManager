@@ -1,6 +1,8 @@
 namespace ToolManager.Diagnostics;
 
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -120,6 +122,8 @@ internal static class UiSmoke
                 }
 
                 checks.Add("PASS Constructing the tray window leaves it hidden and gives it the build-specific title.");
+                await CheckInitialTrayToggleAsync(main);
+                checks.Add("PASS The first tray toggle shows the native window after hidden startup, and the second hides it.");
                 var anchor = PopupPlacement.Cursor();
                 var detected = PopupPlacement.Detect(anchor);
                 var nativeBounds = main.PositionPopup(detected);
@@ -328,6 +332,26 @@ internal static class UiSmoke
             {
                 window.Close();
             }
+        }
+    }
+
+    [DllImport("user32")]
+    private static extern bool IsWindowVisible(nint window);
+
+    private static async Task CheckInitialTrayToggleAsync(MainWindow main)
+    {
+        main.TogglePopup();
+        await main.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+        var handle = new WindowInteropHelper(main).Handle;
+        if (!main.IsVisible || !IsWindowVisible(handle))
+        {
+            throw new Exception($"First tray toggle did not open the native window. WPF visible: {main.IsVisible}, native visible: {IsWindowVisible(handle)}, state: {main.WindowState}.");
+        }
+
+        main.TogglePopup();
+        if (main.IsVisible || IsWindowVisible(handle))
+        {
+            throw new Exception("Second tray toggle must hide the same window.");
         }
     }
 
