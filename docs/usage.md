@@ -72,4 +72,7 @@ Configuration and scripts can contain sensitive values. Configuration stays in t
 
 ## Tray placement
 
+The main window fits the tools shown on this PC. It widens for long names and scrolls vertically when the list is taller
+than the monitor allows.
+
 The popup uses the tray click location to select its monitor and reads actual primary/secondary taskbar bounds, including moved taskbars. It opens beside the corresponding edge within the monitor work area. Per-monitor DPI scaling and negative coordinates are supported. If a custom shell provides no usable taskbar window, placement falls back to the clicked edge and reported work area.

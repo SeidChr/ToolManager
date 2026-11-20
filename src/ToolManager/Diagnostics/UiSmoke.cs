@@ -121,7 +121,7 @@ internal static class UiSmoke
                 checks.Add("PASS Constructing the tray window leaves it hidden and gives it the build-specific title.");
                 var anchor = PopupPlacement.Cursor();
                 var detected = PopupPlacement.Detect(anchor);
-                var nativeBounds = PopupPlacement.Position(main, anchor);
+                var nativeBounds = main.PositionPopup(detected);
                 if (nativeBounds.Left < detected.Monitor.Left || nativeBounds.Right > detected.Monitor.Right || nativeBounds.Top < detected.Monitor.Top || nativeBounds.Bottom > detected.Monitor.Bottom)
                 {
                     throw new Exception("Live popup is outside its target monitor.");
@@ -145,6 +145,29 @@ internal static class UiSmoke
                 }
 
                 checks.Add("PASS Main view keeps separate Start and Stop buttons enabled according to tool state.");
+                var largeList = new Configuration();
+                for (var index = 0; index < 100; index++)
+                {
+                    largeList.Tools.Add(new ToolEntry { Name = $"Tool {index}" });
+                }
+
+                var largeMain = new MainWindow(new RunManager(largeList), preview: true);
+                var largeBounds = largeMain.PositionPopup(detected);
+                var limit = PopupPlacement.Calculate(detected, int.MaxValue, int.MaxValue, (int)Math.Ceiling(PopupPlacement.GapDip * detected.Dpi / 96d));
+                if (largeBounds.Width != nativeBounds.Width || largeBounds.Height != limit.Height || nativeBounds.Height >= largeBounds.Height)
+                {
+                    throw new Exception("Extra rows should grow the popup vertically to the monitor limit without widening it.");
+                }
+
+                var wideList = new Configuration();
+                wideList.Tools.Add(new ToolEntry { Name = new string('W', 300) });
+                var wideMain = new MainWindow(new RunManager(wideList), preview: true);
+                if (wideMain.PositionPopup(detected).Width != limit.Width)
+                {
+                    throw new Exception("Long titles should widen the popup up to the monitor limit.");
+                }
+
+                checks.Add("PASS Main window fits the row count, widening for long names, within monitor and taskbar limits.");
                 var settings = new SettingsWindow(config);
                 settings.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
                 var startupButtons = ((System.Windows.Controls.StackPanel)((System.Windows.Controls.ScrollViewer)((System.Windows.Controls.DockPanel)settings.Content).Children[1]).Content).Children.OfType<System.Windows.Controls.StackPanel>().First().Children.OfType<System.Windows.Controls.Button>().ToArray();

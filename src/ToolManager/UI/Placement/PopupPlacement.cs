@@ -8,6 +8,8 @@ using ToolManager.Interop;
 
 internal static class PopupPlacement
 {
+    internal const int GapDip = 8;
+
     private delegate bool EnumWindow(nint window, nint parameter);
 
     public static PixelPoint Cursor()
@@ -165,18 +167,17 @@ internal static class PopupPlacement
         return new(x, y, x + width, y + height);
     }
 
-    public static PixelRect Position(Window window, PixelPoint anchor)
+    public static PixelRect Position(Window window, PopupLocation location)
     {
-        var location = Detect(anchor);
         var handle = new WindowInteropHelper(window).EnsureHandle();
         var scale = location.Dpi / 96d;
-        var rect = Calculate(location, (int)Math.Ceiling(window.Width * scale), (int)Math.Ceiling(window.Height * scale), (int)Math.Ceiling(8 * scale));
+        var rect = Calculate(location, (int)Math.Ceiling(window.Width * scale), (int)Math.Ceiling(window.Height * scale), (int)Math.Ceiling(GapDip * scale));
         Native.Check(SetWindowPos(handle, nint.Zero, rect.Left, rect.Top, rect.Width, rect.Height, 0x14));
 
         // WPF can resize on WM_DPICHANGED. Re-anchor the resulting physical window bounds on the target monitor.
         if (GetWindowRect(handle, out var actual))
         {
-            rect = Calculate(location, actual.Pixels.Width, actual.Pixels.Height, (int)Math.Ceiling(8 * scale));
+            rect = Calculate(location, actual.Pixels.Width, actual.Pixels.Height, (int)Math.Ceiling(GapDip * scale));
             Native.Check(SetWindowPos(handle, nint.Zero, rect.Left, rect.Top, rect.Width, rect.Height, 0x14));
         }
 
