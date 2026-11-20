@@ -62,12 +62,17 @@ jobs:
         id: package
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
-          $archive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64.zip"
-          Compress-Archive -Path outputs/ToolManager -DestinationPath $archive
-          "sha256=$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
-          $frameworkArchive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64-framework-dependent.zip"
-          Compress-Archive -Path outputs/ToolManager-framework-dependent -DestinationPath $frameworkArchive
-          "framework-dependent-sha256=$((Get-FileHash -LiteralPath $frameworkArchive -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
+          $packageRoot = Join-Path 'work' ('release-packages-' + [guid]::NewGuid().ToString('N'))
+          foreach ($name in 'ToolManager', 'ToolManager-framework-dependent') {
+            $package = Join-Path $packageRoot $name
+            New-Item -ItemType Directory -Path (Join-Path $package 'tools'), (Join-Path $package 'scripts') -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path "outputs/$name" 'ToolManager.exe') -Destination $package
+            $suffix = if ($name -eq 'ToolManager') { '' } else { '-framework-dependent' }
+            $archive = "artifacts/ToolManager-$env:RELEASE_TAG-win-x64$suffix.zip"
+            Compress-Archive -LiteralPath $package -DestinationPath $archive
+            $outputName = if ($suffix) { 'framework-dependent-sha256' } else { 'sha256' }
+            "$outputName=$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash)" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Upload downloadable candidate
         id: candidate

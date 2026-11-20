@@ -47,9 +47,6 @@ try {
             New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force | Out-Null
             Copy-Item -LiteralPath $file.FullName -Destination $target -Force
         }
-        Copy-Item -LiteralPath "$PSScriptRoot\README.md" -Destination (Join-Path $package 'README.md') -Force
-        New-Item -ItemType Directory -Path (Join-Path $package 'docs') -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs/readme') -Destination (Join-Path $package 'docs') -Recurse -Force
         New-Item -ItemType Directory -Path (Join-Path $package 'tools'), (Join-Path $package 'scripts') -Force | Out-Null
         Write-Output "Published application: $package\ToolManager.exe (self-contained: $selfContained)"
     }
