@@ -214,6 +214,8 @@ internal static class UiSmoke
 
                 checks.Add("PASS Console output and input use fixed black templates without hover/focus triggers.");
                 await CheckStartKeepsDispatcherAvailableAsync(folder);
+                await CronTests.RunAsync();
+                checks.Add("PASS Cron validation, repeated execution, overlap prevention, and stop lifecycle.");
                 checks.Add("PASS Start publishes an active run on the dispatcher before shell preparation finishes.");
                 checks.Add("PASS WPF windows constructed and rendered offscreen.");
                 await File.WriteAllLinesAsync(Path.Combine(folder, "result.txt"), checks);

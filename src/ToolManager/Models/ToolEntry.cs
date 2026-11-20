@@ -17,6 +17,10 @@ public sealed class ToolEntry
     public string Command { get; set; } = string.Empty;
     public string StopCommand { get; set; } = string.Empty;
     public string StatusCommand { get; set; } = string.Empty;
+
+    public string? CronExpression
+    { get; set; }
+
     public string WorkingDirectory { get; set; } = ".";
 
     public int? StopTimeoutSeconds

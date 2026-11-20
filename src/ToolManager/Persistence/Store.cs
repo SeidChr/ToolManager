@@ -1,6 +1,7 @@
 namespace ToolManager.Persistence;
 
 using System.Text.Json.Serialization;
+using ToolManager.Execution;
 using ToolManager.Models;
 
 public static class Store
@@ -124,7 +125,7 @@ public static class Store
                 throw new InvalidDataException($"Select a valid shell for {t.Name}.");
             }
 
-            if (t.Mode is not ("Installed" or "Bundled") || t.Behavior is not ("Managed" or "Custom"))
+            if (t.Mode is not ("Installed" or "Bundled") || t.Behavior is not ("Managed" or "Custom" or "Cron"))
             {
                 throw new InvalidDataException("Unsupported tool mode or behavior.");
             }
@@ -142,6 +143,11 @@ public static class Store
             if (t.Interactive && t.Behavior != "Managed")
             {
                 throw new InvalidDataException("Keep-open shells require Managed behavior.");
+            }
+
+            if (t.Behavior == "Cron")
+            {
+                _ = CronSchedule.Parse(t);
             }
 
             if (t.Behavior == "Custom" && string.IsNullOrWhiteSpace(t.StopCommand))

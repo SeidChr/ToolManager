@@ -8,6 +8,7 @@ Settings includes Show configuration in File Explorer to select tools.json for c
 
 - Managed: use for both one-shot commands and long-running tools. Start creates a run; Stop sends Ctrl+C and waits for the configured timeout, then forcibly terminates remaining processes owned by that run. Only one active run per entry is allowed.
 - Custom: start and stop scripts control a target outside the manager's process session, such as a service. Optional Check script uses exit code 0 for running, 1 for stopped, and other values for unknown. No checks run automatically. Canceling an active script stops that script's session, not its external target. External targets are not automatically stopped on manager exit.
+- Cron: run a command on a schedule while the tool is started. See [Cron tasks](cron.md).
 - Installed: commands can use PATH names, absolute paths or relative paths.
 - Bundled: use relative tool paths. The working-directory setting must be relative. Arbitrary script contents are executed as entered, not parsed or rewritten to enforce portability.
 
