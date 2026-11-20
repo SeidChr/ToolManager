@@ -1,7 +1,9 @@
 namespace ToolManager.UI;
 
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Threading;
 using ToolManager.Execution;
 using ToolManager.Models;
@@ -171,7 +173,14 @@ internal sealed class MainWindow : Window
 
             buttons.Children.Add(Ui.Button("Output", () => new OutputWindow(this.manager, tool).Show()));
             var label = new StackPanel();
-            label.Children.Add(Ui.Text(tool.Name, 16));
+            var title = Ui.Text(tool.Name, 16);
+            if (tool.Autostart)
+            {
+                title.Inlines.InsertBefore(title.Inlines.FirstInline, new Run("\u00bb ") { ToolTip = "Autostart enabled" });
+                AutomationProperties.SetName(title, tool.Name + ", autostart enabled");
+            }
+
+            label.Children.Add(title);
             label.Children.Add(Ui.Text(this.State(tool), 12));
             row.Children.Add(label);
             this.rows.Children.Add(row);

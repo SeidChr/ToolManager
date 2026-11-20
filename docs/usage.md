@@ -30,7 +30,7 @@ All relative working-directory settings resolve from the manager folder, not the
 
 ### Start and Stop states
 
-The main view always shows separate Start and Stop buttons. Start is enabled while idle; Stop is enabled while running, including an external Custom target reported as running by Check. Both are disabled while stopping. An unknown Custom status leaves Start enabled and Stop disabled.
+The main view always shows separate Start and Stop buttons. Start is enabled while idle; Stop is enabled while running, including an external Custom target reported as running by Check. Both are disabled while stopping. An unknown Custom status leaves Start enabled and Stop disabled. A double right arrow next to a tool name marks it as opted into Autostart.
 
 ## Start with Windows
 
