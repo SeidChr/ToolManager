@@ -200,7 +200,7 @@ internal sealed class MainWindow : Window
                 }
             }
 
-            buttons.Children.Add(Ui.Button("Output", () => new OutputWindow(this.manager, tool).Show()));
+            buttons.Children.Add(Ui.Button("Output", () => OutputWindow.ShowForTool(this.manager, tool)));
             var label = new StackPanel();
             var title = Ui.Text(tool.Name, 16);
             if (tool.Autostart)
