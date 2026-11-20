@@ -134,6 +134,20 @@ internal static class UiSmoke
                 }
 
                 checks.Add("PASS Hidden native WPF window placed on the live target monitor outside the detected taskbar: " + nativeBounds);
+                main.ShowActivated = false;
+                main.Opacity = 0;
+                main.Show();
+                main.PositionPopup(detected);
+                main.UpdateLayout();
+                await app.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+                var toolList = ((System.Windows.Controls.DockPanel)main.Content).Children.OfType<System.Windows.Controls.ScrollViewer>().Single();
+                if (toolList.ComputedVerticalScrollBarVisibility == Visibility.Visible || toolList.ExtentHeight > toolList.ViewportHeight + 0.01)
+                {
+                    throw new Exception($"Expected the shown popup to fit all sample rows without scrolling. Extent {toolList.ExtentHeight:F2}, viewport {toolList.ViewportHeight:F2}, window {main.ActualHeight:F2}.");
+                }
+
+                main.Hide();
+                checks.Add("PASS The shown popup fits all sample rows without a vertical scrollbar.");
                 await Capture(main, "main");
 
                 var markedTitles = Descendants((FrameworkElement)main.Content).OfType<System.Windows.Controls.TextBlock>()

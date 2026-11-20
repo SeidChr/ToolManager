@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using ToolManager.Execution;
 using ToolManager.Models;
@@ -32,6 +33,9 @@ internal sealed class MainWindow : Window
         this.Title = AppIdentity.Name;
         this.ResizeMode = ResizeMode.CanMinimize;
         this.ShowInTaskbar = true;
+
+        // A new WPF window defaults to Collapsed, which skips measurement.
+        this.Visibility = Visibility.Hidden;
         var root = new DockPanel { Margin = new Thickness(10) };
         var header = new DockPanel();
         var settings = Ui.Button("Settings", async () => await this.OpenSettingsAsync());
@@ -106,15 +110,15 @@ internal sealed class MainWindow : Window
     {
         var scale = location.Dpi / 96d;
         var limit = PopupPlacement.Calculate(location, int.MaxValue, int.MaxValue, (int)Math.Ceiling(PopupPlacement.GapDip * scale));
-        var content = (FrameworkElement)this.Content;
-        var frameWidth = 2 * SystemParameters.FixedFrameVerticalBorderWidth;
-        var frameHeight = SystemParameters.WindowCaptionHeight + (2 * SystemParameters.FixedFrameHorizontalBorderHeight);
 
-        content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var naturalWidth = content.DesiredSize.Width + frameWidth + SystemParameters.VerticalScrollBarWidth;
-        this.Width = Math.Min(limit.Width / scale, Math.Max(620, Math.Ceiling(naturalWidth)));
-        content.Measure(new Size(Math.Max(1, this.Width - frameWidth), double.PositiveInfinity));
-        this.Height = Math.Min(limit.Height / scale, Math.Max(120, Math.Ceiling(content.DesiredSize.Height + frameHeight)));
+        new WindowInteropHelper(this).EnsureHandle();
+        this.Width = double.NaN;
+        this.Height = double.NaN;
+
+        this.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        this.Width = Math.Min(limit.Width / scale, Math.Max(620, Math.Ceiling(this.DesiredSize.Width)));
+        this.Measure(new Size(this.Width, double.PositiveInfinity));
+        this.Height = Math.Min(limit.Height / scale, Math.Max(120, Math.Ceiling(this.DesiredSize.Height)));
         return PopupPlacement.Position(this, location);
     }
 
