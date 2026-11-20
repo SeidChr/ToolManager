@@ -1,6 +1,7 @@
 namespace ToolManager.Execution;
 
 using System.IO.Pipes;
+using Cronos;
 using ToolManager.Models;
 using ToolManager.Persistence;
 
@@ -9,6 +10,7 @@ public sealed class RunManager
     private readonly Dictionary<string, (StreamWriter Writer, SemaphoreSlim Gate)> controls = [];
 
     private readonly Dictionary<string, RunRecord> active = [];
+    private readonly Dictionary<string, CancellationTokenSource> schedules = [];
 
     public RunManager(Configuration config) => this.Config = config;
 
@@ -17,7 +19,13 @@ public sealed class RunManager
 
     public List<RunRecord> History { get; } = [];
 
-    public bool IsActive(string toolId) => this.active.ContainsKey(toolId);
+    public bool HasActiveTools => this.active.Count > 0 || this.schedules.Count > 0;
+
+    public bool IsActive(string toolId) => this.active.ContainsKey(toolId) || this.schedules.ContainsKey(toolId);
+
+    public string? ScheduleState(string toolId) => this.schedules.TryGetValue(toolId, out var schedule)
+        ? schedule.IsCancellationRequested ? "Stopping" : "Scheduled"
+        : null;
 
     public RunRecord? Current(string toolId) => this.active.GetValueOrDefault(toolId);
 
@@ -30,55 +38,48 @@ public sealed class RunManager
 
         foreach (var entry in this.Config.Tools.Where(t => t.Autostart && t.Visible))
         {
-            await this.StartAsync(entry);
+            await this.StartToolAsync(entry);
         }
+    }
+
+    public Task StartToolAsync(ToolEntry entry)
+    {
+        if (entry.Behavior != "Cron")
+        {
+            return this.StartAsync(entry);
+        }
+
+        if (this.IsActive(entry.Id))
+        {
+            throw new InvalidOperationException("This entry already has an active run or schedule.");
+        }
+
+        var expression = CronSchedule.Parse(entry);
+        var schedule = new CancellationTokenSource();
+        this.schedules.Add(entry.Id, schedule);
+        _ = this.RunScheduleAsync(entry, expression, schedule);
+        return Task.CompletedTask;
     }
 
     public Task<RunRecord> StartAsync(ToolEntry entry, string action = "Run")
     {
         if (this.IsActive(entry.Id))
         {
-            throw new InvalidOperationException("This entry already has an active run.");
+            throw new InvalidOperationException("This entry already has an active run or schedule.");
         }
 
-        var record = new RunRecord
-        {
-            ToolId = entry.Id,
-            Action = action,
-            Interactive = entry.Interactive,
-        };
-        this.active.Add(entry.Id, record);
-        this.History.Add(record);
-        this.Prune();
-        _ = this.ExecuteAsync(entry, record);
+        var (record, _) = this.StartRun(entry, action);
         return Task.FromResult(record);
     }
 
-    public async Task StopAsync(string toolId)
+    public Task StopAsync(string toolId)
     {
-        if (!this.active.TryGetValue(toolId, out var record) || record.StopDeadline != null)
+        if (this.schedules.TryGetValue(toolId, out var schedule))
         {
-            return;
+            schedule.Cancel();
         }
 
-        record.StopRequested = true;
-        if (this.controls.ContainsKey(record.Id))
-        {
-            record.State = "Stopping";
-            var entry = this.Config.Tools.FirstOrDefault(t => t.Id == toolId);
-            record.StopDeadline = DateTime.Now.AddSeconds(entry?.StopTimeoutSeconds ?? this.Config.StopTimeoutSeconds);
-            try
-            {
-                await this.SendControlAsync(record, new("stop"));
-            }
-            catch (IOException) { }
-        }
-
-        // A stop during startup is delivered immediately after the runner connects.
-        else
-        {
-            record.State = "Stopping";
-        }
+        return this.active.TryGetValue(toolId, out var record) ? this.StopRunAsync(record) : Task.CompletedTask;
     }
 
     public async Task SendInputAsync(RunRecord record, string text)
@@ -105,12 +106,10 @@ public sealed class RunManager
 
     public async Task StopAllAsync()
     {
-        foreach (var id in this.active.Keys.ToArray())
-        {
-            await this.StopAsync(id);
-        }
+        var ids = this.active.Keys.Union(this.schedules.Keys).ToArray();
+        await Task.WhenAll(ids.Select(this.StopAsync));
 
-        while (this.active.Count > 0)
+        while (this.HasActiveTools)
         {
             await Task.Delay(100);
         }
@@ -257,6 +256,62 @@ public sealed class RunManager
         }
     }
 
+    private (RunRecord Record, Task Execution) StartRun(ToolEntry entry, string action)
+    {
+        var record = new RunRecord
+        {
+            ToolId = entry.Id,
+            Action = action,
+            Interactive = entry.Interactive,
+        };
+        this.active.Add(entry.Id, record);
+        this.History.Add(record);
+        this.Prune();
+        return (record, this.ExecuteAsync(entry, record));
+    }
+
+    private async Task RunScheduleAsync(ToolEntry entry, CronExpression expression, CancellationTokenSource schedule)
+    {
+        try
+        {
+            await CronSchedule.RunAsync(expression, () => this.StartRun(entry, "Run").Execution, schedule.Token);
+        }
+        catch (OperationCanceledException) when (schedule.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            this.schedules.Remove(entry.Id);
+            schedule.Dispose();
+        }
+    }
+
+    private async Task StopRunAsync(RunRecord record)
+    {
+        if (record.StopDeadline is not null)
+        {
+            return;
+        }
+
+        record.StopRequested = true;
+        record.State = "Stopping";
+        if (!this.controls.ContainsKey(record.Id))
+        {
+            // A stop during startup is delivered immediately after the runner connects.
+            return;
+        }
+
+        var entry = this.Config.Tools.FirstOrDefault(t => t.Id == record.ToolId);
+        record.StopDeadline = DateTime.Now.AddSeconds(entry?.StopTimeoutSeconds ?? this.Config.StopTimeoutSeconds);
+        try
+        {
+            await this.SendControlAsync(record, new("stop"));
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     private async Task SendControlAsync(RunRecord record, RunnerMessage message)
     {
         if (!this.controls.TryGetValue(record.Id, out var channel))
@@ -385,7 +440,7 @@ public sealed class RunManager
                         this.controls[record.Id] = (writer, new SemaphoreSlim(1));
                         if (record.StopRequested)
                         {
-                            await this.StopAsync(entry.Id);
+                            await this.StopRunAsync(record);
                         }
                         else
                         {

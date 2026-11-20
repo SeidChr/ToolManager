@@ -52,12 +52,17 @@ internal sealed class ToolEditor : Window
         body.Children.Add(Ui.Text("Installed: PATH names, absolute paths, or relative paths. Bundled: use relative tool paths. Scripts are executed as written; paths inside them are not rewritten.", 12));
         var behavior = new ComboBox
         {
-            ItemsSource = new[] { "Managed", "Custom" },
+            ItemsSource = new[] { "Managed", "Custom", "Cron" },
             SelectedItem = draft.Behavior,
             Margin = new Thickness(4),
         };
         Ui.Field(body, "Behavior", behavior);
-        body.Children.Add(Ui.Text("Managed: both one-shot and long-running programs. Custom: scripts controlling an external target; its state is unknown until checked.", 12));
+        body.Children.Add(Ui.Text("Managed: both one-shot and long-running programs. Custom: scripts controlling an external target; its state is unknown until checked. Cron: repeat a short-lived command on a schedule.", 12));
+        var schedule = new StackPanel();
+        body.Children.Add(schedule);
+        var expression = Ui.Input(draft.CronExpression ?? string.Empty);
+        Ui.Field(schedule, "Cron expression (local time, e.g. */5 * * * *)", expression);
+        schedule.Children.Add(Ui.Text("Fields: minute, hour, day of month, month, day of week. Add a leading seconds field for sub-minute schedules.", 12));
         var shell = new ComboBox
         {
             ItemsSource = config.Shells,
@@ -74,8 +79,10 @@ internal sealed class ToolEditor : Window
             IsChecked = draft.Interactive,
             Margin = new Thickness(5),
         };
-        body.Children.Add(interactive);
-        body.Children.Add(Ui.Text("Enable for a persistent shell or commands that read text input. Output > Send or Enter sends one line. Stop ends the entire session.", 12));
+        var session = new StackPanel();
+        body.Children.Add(session);
+        session.Children.Add(interactive);
+        session.Children.Add(Ui.Text("Enable for a persistent shell or commands that read text input. Output > Send or Enter sends one line. Stop ends the entire session.", 12));
         var working = Ui.Input(draft.WorkingDirectory);
         Ui.Field(body, "Working directory (relative paths start at the manager folder)", working);
         var stopTimeout = Ui.Input(draft.StopTimeoutSeconds?.ToString() ?? string.Empty);
@@ -86,8 +93,16 @@ internal sealed class ToolEditor : Window
         Ui.Field(custom, "Stop script for the external target", stop);
         var status = Ui.Input(draft.StatusCommand, true);
         Ui.Field(custom, "Optional status script: exit 0 = running, 1 = stopped, other = unknown", status);
-        behavior.SelectionChanged += (_, _) => custom.Visibility = (string?)behavior.SelectedItem == "Custom" ? Visibility.Visible : Visibility.Collapsed;
-        custom.Visibility = draft.Behavior == "Custom" ? Visibility.Visible : Visibility.Collapsed;
+        void UpdateBehaviorFields()
+        {
+            var selectedBehavior = (string?)behavior.SelectedItem;
+            custom.Visibility = selectedBehavior == "Custom" ? Visibility.Visible : Visibility.Collapsed;
+            schedule.Visibility = selectedBehavior == "Cron" ? Visibility.Visible : Visibility.Collapsed;
+            session.Visibility = selectedBehavior == "Managed" ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        behavior.SelectionChanged += (_, _) => UpdateBehaviorFields();
+        UpdateBehaviorFields();
         var restricted = new CheckBox
         {
             Content = "Only show on these PCs",
@@ -120,7 +135,8 @@ internal sealed class ToolEditor : Window
                 draft.Mode = (string)mode.SelectedItem;
                 draft.Behavior = (string)behavior.SelectedItem;
                 draft.ShellId = (shell.SelectedItem as ShellProfile)?.Id ?? string.Empty;
-                draft.Interactive = interactive.IsChecked == true;
+                draft.Interactive = draft.Behavior == "Managed" && interactive.IsChecked == true;
+                draft.CronExpression = draft.Behavior == "Cron" ? expression.Text.Trim() : null;
                 draft.Command = command.Text;
                 draft.StopCommand = stop.Text;
                 draft.StatusCommand = status.Text;

@@ -112,7 +112,13 @@ internal sealed class MainWindow : Window
 
     private string State(ToolEntry t)
     {
-        var run = this.manager.Current(t.Id) ?? this.manager.History.LastOrDefault(r => r.ToolId == t.Id);
+        var current = this.manager.Current(t.Id);
+        if (t.Behavior == "Cron" && current is null)
+        {
+            return this.manager.ScheduleState(t.Id) ?? "Ready";
+        }
+
+        var run = current ?? this.manager.History.LastOrDefault(r => r.ToolId == t.Id);
         if (run is null)
         {
             return t.Behavior == "Custom" ? "Unknown" : "Ready";
@@ -159,7 +165,7 @@ internal sealed class MainWindow : Window
             start.IsEnabled = !running && !externalRunning;
             buttons.Children.Add(start);
             var stop = Ui.Button("Stop", async () => await this.Act(tool, running ? "Cancel" : "Stop"));
-            stop.IsEnabled = (running || externalRunning) && this.manager.Current(tool.Id)?.State != "Stopping";
+            stop.IsEnabled = (running || externalRunning) && this.manager.Current(tool.Id)?.State != "Stopping" && this.manager.ScheduleState(tool.Id) != "Stopping";
             buttons.Children.Add(stop);
             if (tool.Behavior == "Custom" && !running)
             {
@@ -185,6 +191,10 @@ internal sealed class MainWindow : Window
             if (action == "Cancel")
             {
                 await this.manager.StopAsync(tool.Id);
+            }
+            else if (action == "Run")
+            {
+                await this.manager.StartToolAsync(tool);
             }
             else
             {
@@ -212,9 +222,9 @@ internal sealed class MainWindow : Window
         try
         {
             var active = this.manager.History.Where(r => r.Active).ToArray();
-            if (active.Length > 0)
+            if (this.manager.HasActiveTools)
             {
-                const string prompt = "Stop all active runs and open Settings? Each run receives Ctrl+C and has its configured grace period before forced termination. External targets controlled by custom scripts may continue running.";
+                const string prompt = "Stop all active runs and schedules and open Settings? Each run receives Ctrl+C and has its configured grace period before forced termination. External targets controlled by custom scripts may continue running.";
                 if (MessageBox.Show(prompt, "Open Settings", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) != MessageBoxResult.OK)
                 {
                     return;
@@ -254,7 +264,7 @@ internal sealed class MainWindow : Window
             return;
         }
 
-        if (this.manager.History.Any(r => r.Active) && MessageBox.Show("Stop all active runs and exit? Each run receives Ctrl+C, then its configured timeout before forced termination. External targets controlled by custom scripts are not stopped automatically.", "Exit Tool Manager", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
+        if (this.manager.HasActiveTools && MessageBox.Show("Stop all active runs and schedules and exit? Each run receives Ctrl+C, then its configured timeout before forced termination. External targets controlled by custom scripts are not stopped automatically.", "Exit Tool Manager", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
         {
             return;
         }

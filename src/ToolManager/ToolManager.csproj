@@ -17,6 +17,8 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Cronos" Version="0.13.0" GeneratePathProperty="true" />
+    <EmbeddedResource Include="$(PkgCronos)/LICENSE" LogicalName="ToolManager.Cronos.LICENSE" Condition="'$(PkgCronos)' != ''" />
     <Resource Include="Assets/ToolManager.ico" />
     <Resource Include="Assets/ToolManager-dev.ico" Condition="'$(ToolManagerProduction)' != 'true'" />
   </ItemGroup>
