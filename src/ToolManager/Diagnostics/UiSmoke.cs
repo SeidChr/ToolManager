@@ -29,6 +29,7 @@ internal static class UiSmoke
         var tool = new ToolEntry
         {
             Name = "Report exporter",
+            Autostart = true,
             Command = "Write-Output 'Report completed'",
         };
         config.Tools.Add(tool);
@@ -134,6 +135,17 @@ internal static class UiSmoke
 
                 checks.Add("PASS Hidden native WPF window placed on the live target monitor outside the detected taskbar: " + nativeBounds);
                 await Capture(main, "main");
+
+                var markedTitles = Descendants((FrameworkElement)main.Content).OfType<System.Windows.Controls.TextBlock>()
+                    .Where(title => title.Inlines.FirstInline is System.Windows.Documents.Run { Text: "\u00bb ", ToolTip: "Autostart enabled" })
+                    .Select(System.Windows.Automation.AutomationProperties.GetName);
+                if (!markedTitles.SequenceEqual(new[] { "Report exporter, autostart enabled" }))
+                {
+                    throw new Exception("Expected the double right arrow on the autostart tool only.");
+                }
+
+                checks.Add("PASS Main view marks only the autostart tool with a double right arrow.");
+
                 var mainButtons = Descendants((FrameworkElement)main.Content).OfType<System.Windows.Controls.Button>().ToArray();
                 var starts = mainButtons.Where(button => button.Content as string == "Start").ToArray();
                 var stops = mainButtons.Where(button => button.Content as string == "Stop").ToArray();
