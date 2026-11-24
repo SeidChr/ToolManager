@@ -17,6 +17,7 @@ public sealed class ToolEntry
     public string Command { get; set; } = string.Empty;
     public string StopCommand { get; set; } = string.Empty;
     public string StatusCommand { get; set; } = string.Empty;
+    public CustomStatusSource CustomStatus { get; set; } = CustomStatusSource.None;
 
     public string? CronExpression
     { get; set; }

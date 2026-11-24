@@ -17,6 +17,8 @@ internal static class SelfTest
         Store.Root = root;
         try
         {
+            await StatusTests.RunAsync();
+            Assert(true, "Custom Status parsing, sanitization, configuration, authoritative state precedence and real-shell observer updates");
             var startup = new StartupTask("S-1-5-21-1-2-3-1001", @"C:\Portable & tools\ToolManager.exe");
             var definition = System.Xml.Linq.XDocument.Parse(startup.Definition());
             System.Xml.Linq.XNamespace taskNamespace = "http://schemas.microsoft.com/windows/2004/02/mit/task";

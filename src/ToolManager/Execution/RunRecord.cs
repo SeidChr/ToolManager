@@ -6,6 +6,12 @@ public sealed class RunRecord
 
     private bool truncated;
     private int outputVersion;
+    private DateTime? ended;
+    private DateTime? stopDeadline;
+    private string state = "Starting";
+    private string customStatus = string.Empty;
+
+    public event EventHandler? Changed;
 
     public string Id { get; } = Guid.NewGuid().ToString("N");
     public string ToolId { get; init; } = string.Empty;
@@ -13,15 +19,35 @@ public sealed class RunRecord
     public DateTime Started { get; } = DateTime.Now;
 
     public DateTime? Ended
-    { get; set; }
+    {
+        get => this.ended;
+        set => this.Set(ref this.ended, value);
+    }
 
-    public string State { get; set; } = "Starting";
+    public string State
+    {
+        get => this.state;
+        set => this.Set(ref this.state, value);
+    }
 
     public int? ExitCode
     { get; set; }
 
     public DateTime? StopDeadline
-    { get; set; }
+    {
+        get => this.stopDeadline;
+        set => this.Set(ref this.stopDeadline, value);
+    }
+
+    public string CustomStatus
+    {
+        get => this.customStatus;
+        internal set => this.Set(ref this.customStatus, value);
+    }
+
+    public string DisplayStatus => this.Active && this.State == "Running" && !this.StopRequested && this.CustomStatus.Length > 0
+        ? this.CustomStatus
+        : this.State;
 
     public bool StopRequested
     { get; set; }
@@ -85,6 +111,15 @@ public sealed class RunRecord
                 this.truncated = true;
                 this.outputVersion++;
             }
+        }
+    }
+
+    private void Set<T>(ref T field, T value)
+    {
+        if (!EqualityComparer<T>.Default.Equals(field, value))
+        {
+            field = value;
+            this.Changed?.Invoke(this, EventArgs.Empty);
         }
     }
 }

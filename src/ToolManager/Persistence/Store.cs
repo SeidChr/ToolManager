@@ -135,6 +135,11 @@ public static class Store
                 throw new InvalidDataException("Bundled working directories must be relative.");
             }
 
+            if (!Enum.IsDefined(t.CustomStatus))
+            {
+                throw new InvalidDataException("Select a supported Custom Status source.");
+            }
+
             if (t.StopTimeoutSeconds is < 1 or > 3600)
             {
                 throw new InvalidDataException("Stop timeout must be 1-3600 seconds.");

@@ -15,12 +15,14 @@ internal sealed class MainWindow : Window
 {
     private readonly RunManager manager;
     private readonly StackPanel rows = new();
+    private readonly Dictionary<string, TextBlock> statusLabels = [];
     private readonly Button startAutostart;
     private readonly Forms.NotifyIcon tray;
     private readonly System.Drawing.Icon trayIcon;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool exiting;
     private bool openingSettings;
+    private bool refreshPending;
     private string signature = string.Empty;
     private PixelPoint? trayAnchor;
 
@@ -91,7 +93,12 @@ internal sealed class MainWindow : Window
             }
         };
         this.timer.Tick += (_, _) => this.Refresh();
-        this.timer.Start();
+        this.manager.Changed += this.OnManagerChanged;
+        this.Closed += (_, _) =>
+        {
+            this.manager.Changed -= this.OnManagerChanged;
+            this.timer.Stop();
+        };
         this.Refresh();
     }
 
@@ -164,15 +171,20 @@ internal sealed class MainWindow : Window
     private void Refresh()
     {
         var visible = this.manager.Config.Tools.Where(t => t.Visible).ToArray();
+
+        // Only the stopping countdown needs a clock; all other changes arrive through the manager observer.
+        this.timer.IsEnabled = visible.Any(t => this.manager.Current(t.Id) is { Active: true, State: "Stopping", StopDeadline: not null });
         this.startAutostart.IsEnabled = !this.openingSettings && !this.exiting && visible.Any(this.manager.CanAutostart);
         var next = string.Join("|", visible.Select(t => t.Id + t.Name + this.State(t) + this.manager.IsActive(t.Id))) + this.manager.History.Count;
         if (next == this.signature)
         {
+            this.RefreshStatusLabels(visible);
             return;
         }
 
         this.signature = next;
         this.rows.Children.Clear();
+        this.statusLabels.Clear();
         if (visible.Length == 0)
         {
             this.rows.Children.Add(Ui.Text("No tools configured for this PC. Add a tool in Settings."));
@@ -210,9 +222,47 @@ internal sealed class MainWindow : Window
             }
 
             label.Children.Add(title);
-            label.Children.Add(Ui.Text(this.State(tool), 12));
+            var status = Ui.Text(string.Empty, 12);
+            status.TextWrapping = TextWrapping.NoWrap;
+            status.TextTrimming = TextTrimming.CharacterEllipsis;
+            status.MaxWidth = 300;
+            status.HorizontalAlignment = HorizontalAlignment.Left;
+            AutomationProperties.SetName(status, tool.Name + " status");
+            this.statusLabels.Add(tool.Id, status);
+            label.Children.Add(status);
             row.Children.Add(label);
             this.rows.Children.Add(row);
+        }
+
+        this.RefreshStatusLabels(visible);
+    }
+
+    private void OnManagerChanged(object? sender, EventArgs args)
+    {
+        if (this.refreshPending || this.exiting)
+        {
+            return;
+        }
+
+        this.refreshPending = true;
+        this.Dispatcher.InvokeAsync(
+            () =>
+            {
+                this.refreshPending = false;
+                if (!this.exiting)
+                {
+                    this.Refresh();
+                }
+            },
+            DispatcherPriority.Background);
+    }
+
+    private void RefreshStatusLabels(IEnumerable<ToolEntry> tools)
+    {
+        foreach (var tool in tools)
+        {
+            var state = this.State(tool);
+            this.statusLabels[tool.Id].Text = state == "Running" && tool.CustomStatus != CustomStatusSource.None && this.manager.Current(tool.Id) is { Active: true, State: "Running", StopRequested: false, CustomStatus.Length: > 0 } current ? "Status: " + current.CustomStatus : state;
         }
     }
 

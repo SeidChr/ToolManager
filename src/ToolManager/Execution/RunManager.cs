@@ -11,11 +11,25 @@ public sealed class RunManager
 
     private readonly Dictionary<string, RunRecord> active = [];
     private readonly Dictionary<string, CancellationTokenSource> schedules = [];
+    private Configuration config;
 
-    public RunManager(Configuration config) => this.Config = config;
+    public RunManager(Configuration config) => this.config = config;
+
+    public event EventHandler? Changed;
 
     public Configuration Config
-    { get; set; }
+    {
+        get
+        {
+            return this.config;
+        }
+
+        set
+        {
+            this.config = value;
+            this.OnChanged(this, EventArgs.Empty);
+        }
+    }
 
     public List<RunRecord> History { get; } = [];
 
@@ -57,6 +71,7 @@ public sealed class RunManager
         var expression = CronSchedule.Parse(entry);
         var schedule = new CancellationTokenSource();
         this.schedules.Add(entry.Id, schedule);
+        this.OnChanged(this, EventArgs.Empty);
         _ = this.RunScheduleAsync(entry, expression, schedule);
         return Task.CompletedTask;
     }
@@ -77,6 +92,7 @@ public sealed class RunManager
         if (this.schedules.TryGetValue(toolId, out var schedule))
         {
             schedule.Cancel();
+            this.OnChanged(this, EventArgs.Empty);
         }
 
         return this.active.TryGetValue(toolId, out var record) ? this.StopRunAsync(record) : Task.CompletedTask;
@@ -277,7 +293,9 @@ public sealed class RunManager
         };
         this.active.Add(entry.Id, record);
         this.History.Add(record);
+        record.Changed += this.OnChanged;
         this.Prune();
+        this.OnChanged(this, EventArgs.Empty);
         return (record, this.ExecuteAsync(entry, record));
     }
 
@@ -294,6 +312,7 @@ public sealed class RunManager
         {
             this.schedules.Remove(entry.Id);
             schedule.Dispose();
+            this.OnChanged(this, EventArgs.Empty);
         }
     }
 
@@ -396,6 +415,7 @@ public sealed class RunManager
             bool exited = false, started = false;
             var stdout = new PlainOutput();
             var stderr = new PlainOutput();
+            var status = new StatusOutput(entry.CustomStatus);
             var startupDeadline = DateTime.UtcNow.AddSeconds(20);
             var pendingRead = reader.ReadLineAsync();
             while (true)
@@ -434,7 +454,9 @@ public sealed class RunManager
                 switch (m.Kind)
                 {
                     case "stdout":
-                        record.Append(stdout.Filter(m.Text), this.Config.OutputLimitKiB * 1024 / 2);
+                        var output = stdout.Filter(m.Text);
+                        record.Append(output, this.Config.OutputLimitKiB * 1024 / 2);
+                        status.Append(output, record);
                         this.Prune();
                         break;
                     case "stderr":
@@ -470,6 +492,7 @@ public sealed class RunManager
                     case "error":
                         throw new IOException(m.Text);
                     case "exit":
+                        status.Complete(record);
                         record.ExitCode = m.Code;
                         record.State = m.Text == "Finished" && m.Code != 0 ? "Failed" : m.Text;
                         exited = true;
@@ -516,8 +539,12 @@ public sealed class RunManager
             {
                 this.active.Remove(entry.Id);
                 record.Ended = DateTime.Now;
+                record.Changed -= this.OnChanged;
                 this.Prune();
+                this.OnChanged(this, EventArgs.Empty);
             }
         }
     }
+
+    private void OnChanged(object? sender, EventArgs args) => this.Changed?.Invoke(this, EventArgs.Empty);
 }

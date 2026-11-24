@@ -33,6 +33,32 @@ All relative working-directory settings resolve from the manager folder, not the
 
 The main view always shows separate Start and Stop buttons. Start is enabled while idle; Stop is enabled while running, including an external Custom target reported as running by Check. Both are disabled while stopping. An unknown Custom status leaves Start enabled and Stop disabled. A double right arrow next to a tool name marks it as opted into Autostart.
 
+### Custom Status
+
+In the tool editor, **Custom Status** selects the text shown beneath the tool name:
+
+- **None**: use the default lifecycle status. This is also the default for existing configurations.
+- **Last output line**: show the latest non-empty stdout line while the script is running.
+- **Explicit status line**: show only stdout lines starting with the exact, case-sensitive prefix `##TM[STATUS]:`. Other output does not change the status.
+
+For PowerShell:
+
+```powershell
+Write-Output '##TM[STATUS]:Ping 12 ms | Success 99.8%'
+```
+
+For CMD:
+
+```cmd
+echo ##TM[STATUS]:Ping 12 ms
+```
+
+Custom text replaces **Running** only. Authoritative states such as Starting, Stopping, Stopped, Failed, Finished and Scheduled replace it completely. Completed Custom Check scripts still use their exit code to report Running, Stopped or Unknown, without retaining the script's custom text. Every new execution starts without custom text. No additional status scripts or background checks are launched.
+
+Status uses completed stdout lines, including carriage-return progress updates; stderr and manager messages are excluded. An empty explicit status line clears the text and restores Running. Blank lines in Last output line mode keep the previous text. The final unterminated line is processed when the runner reports completion. Full stdout remains available in Output, including status prefixes, subject to normal retention.
+
+Terminal escapes are filtered, control and formatting characters are removed, and whitespace is collapsed to a single line. Display text is limited to 120 Unicode text elements and uses ellipsis when the available width is smaller. Only the first 4096 UTF-16 characters of an unfinished line are buffered. Avoid including secrets in status output: it is visible in the main tool list.
+
 ## Start autostart tools
 
 Select **Start autostart tools** next to **Settings** to start eligible tools immediately, including after returning from Settings. It skips tools hidden on this PC, active tools, and Custom targets last reported as running by **Check**.

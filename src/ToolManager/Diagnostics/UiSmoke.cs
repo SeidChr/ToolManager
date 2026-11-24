@@ -264,6 +264,8 @@ internal static class UiSmoke
                 await CheckStartKeepsDispatcherAvailableAsync(folder);
                 await CheckCronOutputAsync();
                 checks.Add("PASS Cron output shows retained occurrences in order and updates when a new occurrence writes output.");
+                await StatusUiTests.RunAsync();
+                checks.Add("PASS Custom Status observer updates, single-line layout, authoritative states and editor choices.");
                 await CronTests.RunAsync();
                 checks.Add("PASS Cron validation, repeated execution, overlap prevention, and stop lifecycle.");
                 checks.Add("PASS Start publishes an active run on the dispatcher before shell preparation finishes.");

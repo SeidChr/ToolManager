@@ -72,6 +72,21 @@ internal sealed class ToolEditor : Window
         Ui.Field(body, "Execution shell", shell);
         var command = Ui.Input(draft.Command, true);
         Ui.Field(body, "Start command or full script", command);
+        var customStatus = new ComboBox
+        {
+            ItemsSource = new[]
+            {
+                KeyValuePair.Create(CustomStatusSource.None, "None"),
+                KeyValuePair.Create(CustomStatusSource.LastOutputLine, "Last output line"),
+                KeyValuePair.Create(CustomStatusSource.ExplicitStatusLine, "Explicit status line"),
+            },
+            DisplayMemberPath = "Value",
+            SelectedValuePath = "Key",
+            SelectedValue = draft.CustomStatus,
+            Margin = new Thickness(4),
+        };
+        Ui.Field(body, "Custom Status", customStatus);
+        body.Children.Add(Ui.Text("None uses the default status. Last output line uses stdout. Explicit status line uses stdout lines beginning with ##TM[STATUS]: (e.g. Write-Output '##TM[STATUS]:Ping 12 ms'). Custom text replaces Running only; authoritative states always take priority.", 12));
         body.Children.Add(Ui.Text("PowerShell example: & '.\\tools\\My Tool\\tool.exe' -Port 8080\nManager root is available as $env:TOOLMANAGER_ROOT. PowerShell profile loading follows the shell setting.", 12));
         var interactive = new CheckBox
         {
@@ -138,6 +153,7 @@ internal sealed class ToolEditor : Window
                 draft.Interactive = draft.Behavior == "Managed" && interactive.IsChecked == true;
                 draft.CronExpression = draft.Behavior == "Cron" ? expression.Text.Trim() : null;
                 draft.Command = command.Text;
+                draft.CustomStatus = (CustomStatusSource)customStatus.SelectedValue;
                 draft.StopCommand = stop.Text;
                 draft.StatusCommand = status.Text;
                 draft.WorkingDirectory = working.Text.Trim();
