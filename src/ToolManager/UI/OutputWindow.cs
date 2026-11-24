@@ -13,12 +13,6 @@ internal sealed class OutputWindow : Window
 
     private readonly RunManager manager;
     private readonly string toolId;
-    private readonly ComboBox runs = new()
-    {
-        Margin = new Thickness(4),
-        MinWidth = 300,
-    };
-
     private readonly TextBox output = new()
     {
         Background = Brushes.Black,
@@ -45,7 +39,6 @@ internal sealed class OutputWindow : Window
     private readonly TextBox input = Ui.Input(string.Empty);
     private readonly DockPanel inputRow = new();
     private readonly Button send;
-    private bool isCron;
     private bool sending;
     private string? refreshSignature;
 
@@ -61,8 +54,6 @@ internal sealed class OutputWindow : Window
         Ui.ConsoleTextBox(this.output);
         Ui.ConsoleTextBox(this.input);
         var root = new DockPanel { Margin = new Thickness(8) };
-        DockPanel.SetDock(this.runs, Dock.Top);
-        root.Children.Add(this.runs);
         DockPanel.SetDock(this.detail, Dock.Top);
         root.Children.Add(this.detail);
         var footer = new StackPanel { Orientation = Orientation.Horizontal };
@@ -88,7 +79,7 @@ internal sealed class OutputWindow : Window
         this.input.Foreground = Brushes.Gainsboro;
         this.input.CaretBrush = Brushes.White;
         this.input.MaxLength = RunRequest.MaximumInputCharacters;
-        this.input.ToolTip = "Send a line to the selected live run. Enable keep-open shell in tool settings.";
+        this.input.ToolTip = "Send a line to the current live run. Enable keep-open shell in tool settings.";
         System.Windows.Automation.AutomationProperties.SetName(this.input, "Command or input line");
         this.input.KeyDown += async (_, e) =>
         {
@@ -104,7 +95,6 @@ internal sealed class OutputWindow : Window
         root.Children.Add(this.output);
         this.Content = root;
         this.ApplyTool(tool);
-        this.runs.SelectionChanged += (_, _) => this.UpdateOutput();
         this.timer.Tick += (_, _) => this.Refresh();
         this.Closed += (_, _) => this.timer.Stop();
         this.timer.Start();
@@ -135,40 +125,20 @@ internal sealed class OutputWindow : Window
     private void ApplyTool(ToolEntry tool)
     {
         this.Title = tool.Name + " - Output - " + AppIdentity.Name;
-        var cron = tool.Behavior == "Cron";
-        if (this.isCron != cron)
-        {
-            this.isCron = cron;
-            this.runs.Visibility = this.inputRow.Visibility = cron ? Visibility.Collapsed : Visibility.Visible;
-            this.refreshSignature = null;
-        }
+        this.inputRow.Visibility = tool.Behavior == "Cron" ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Refresh()
     {
-        var history = this.manager.History.Where(r => r.ToolId == this.toolId);
-        if (this.isCron)
+        var current = this.manager.Current(this.toolId);
+        this.input.IsEnabled = this.send.IsEnabled = !this.sending && current is { Active: true, Interactive: true, State: "Running" };
+        var records = this.manager.History.Where(record => record.ToolId == this.toolId).OrderBy(record => record.Started).ToArray();
+        this.detail.Text = records.Length == 0 ? NoRuns : $"Retained runs: {records.Length}";
+        if (current is not null)
         {
-            this.UpdateCronOutput(history.ToArray());
-            return;
+            this.detail.Text += $" | {current.Action} | {current.State} | Duration {(current.Ended ?? DateTime.Now) - current.Started:hh\\:mm\\:ss}" + ExitCode(current);
         }
 
-        var records = history.OrderByDescending(r => r.Started).ToArray();
-        var next = string.Join('|', records.Select(r => r.Id + r.State));
-        if (this.refreshSignature != next)
-        {
-            var selected = (this.runs.SelectedItem as RunRecord)?.Id;
-            this.refreshSignature = next;
-            this.runs.ItemsSource = records;
-            this.runs.SelectedItem = records.FirstOrDefault(r => r.Id == selected) ?? records.FirstOrDefault();
-        }
-
-        this.UpdateOutput();
-    }
-
-    private void UpdateCronOutput(RunRecord[] records)
-    {
-        this.detail.Text = records.Length == 0 ? NoRuns : $"Retained occurrences: {records.Length}";
         var next = string.Join('|', records.Select(run => $"{run.Id}:{run.OutputVersion}:{run.State}:{run.ExitCode}:{run.Ended?.Ticks}"));
         if (next == this.refreshSignature)
         {
@@ -180,7 +150,7 @@ internal sealed class OutputWindow : Window
         foreach (var run in records)
         {
             var duration = run.Ended is DateTime ended ? $" | Duration {ended - run.Started:hh\\:mm\\:ss}" : string.Empty;
-            text.AppendLine($"[{run.Started:yyyy-MM-dd HH:mm:ss} | {run.State}{duration}{ExitCode(run)}]");
+            text.AppendLine($"[{run.Started:yyyy-MM-dd HH:mm:ss} | {run.Action} | {run.State}{duration}{ExitCode(run)}]");
             text.AppendLine(run.Output);
             text.AppendLine();
         }
@@ -190,7 +160,7 @@ internal sealed class OutputWindow : Window
 
     private async Task SendAsync()
     {
-        if (this.sending || this.runs.SelectedItem is not RunRecord run)
+        if (this.sending || this.manager.Current(this.toolId) is not RunRecord run)
         {
             return;
         }
@@ -210,16 +180,8 @@ internal sealed class OutputWindow : Window
         finally
         {
             this.sending = false;
-            this.UpdateOutput();
+            this.Refresh();
         }
-    }
-
-    private void UpdateOutput()
-    {
-        var run = this.runs.SelectedItem as RunRecord;
-        this.input.IsEnabled = this.send.IsEnabled = !this.sending && run is { Active: true, Interactive: true, State: "Running" };
-        this.detail.Text = run is null ? NoRuns : $"{run.Action} | {run.State} | Duration {(run.Ended ?? DateTime.Now) - run.Started:hh\\:mm\\:ss}" + ExitCode(run);
-        this.SetOutput(run?.Output ?? string.Empty);
     }
 
     private void SetOutput(string text)
@@ -235,7 +197,7 @@ internal sealed class OutputWindow : Window
         {
             this.output.ScrollToEnd();
         }
-        else if (this.isCron)
+        else
         {
             this.output.ScrollToVerticalOffset(offset);
         }
