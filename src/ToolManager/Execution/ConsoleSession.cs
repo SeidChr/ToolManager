@@ -17,6 +17,10 @@ internal sealed class ConsoleSession : IDisposable
     public ConsoleSession(RunRequest request)
     {
         Native.Check(Native.AllocConsole());
+
+        // Native tools share this console and must agree with the UTF-8 pipes from startup.
+        Native.Check(Native.SetConsoleCP(65001));
+        Native.Check(Native.SetConsoleOutputCP(65001));
         Native.Check(Native.SetConsoleCtrlHandler(IgnoreCtrl, true));
         this.job = Native.CreateJobObject(nint.Zero, null);
         Native.Check(this.job != nint.Zero);

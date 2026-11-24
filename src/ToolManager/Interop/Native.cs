@@ -18,6 +18,12 @@ internal static class Native
     internal static extern bool AllocConsole();
 
     [DllImport("kernel32", SetLastError = true)]
+    internal static extern bool SetConsoleCP(uint codePage);
+
+    [DllImport("kernel32", SetLastError = true)]
+    internal static extern bool SetConsoleOutputCP(uint codePage);
+
+    [DllImport("kernel32", SetLastError = true)]
     internal static extern bool SetConsoleCtrlHandler(Handler handler, bool add);
 
     [DllImport("kernel32", SetLastError = true)]

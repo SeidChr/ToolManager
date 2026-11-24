@@ -191,9 +191,9 @@ internal static class SelfTest
                 {
                     await m.SendInputAsync(run, "$answer=Read-Host 'Answer'; Write-Output ('received-'+$answer)");
                     await Task.Delay(200);
-                    await m.SendInputAsync(run, "text response");
-                    await Wait(() => run.Output.Contains("received-text response") || !run.Active);
-                    Assert(run.Output.Contains("received-text response"), shell + " accepts Read-Host responses");
+                    await m.SendInputAsync(run, "text response äöü 世界");
+                    await Wait(() => run.Output.Contains("received-text response äöü 世界") || !run.Active);
+                    Assert(run.Output.Contains("received-text response äöü 世界"), shell + " accepts Unicode Read-Host responses: " + run.Output);
                 }
 
                 await m.SendInputAsync(run, "exit");
@@ -221,6 +221,21 @@ internal static class SelfTest
             Assert(stoppedShell.State is "Stopped" or "Force-stopped", "Interactive shell still honors Stop and timeout");
             var fixture = Path.Combine(AppContext.BaseDirectory, "fixtures", "Fixture.exe");
             Assert(File.Exists(fixture), "Native console fixture exists");
+            foreach (var shell in new[] { "pwsh", "powershell", "cmd" })
+            {
+                var call = shell == "cmd" ? $"\"{fixture}\" encoding" : $"& '{fixture.Replace("'", "''")}' encoding";
+                result = await Run(Entry(call, shell));
+                Assert(result.ExitCode == 0 && result.Output.Split("Ping wird ausgeführt für google.com: äöü ÄÖÜ ß").Length == 3, shell + " preserves native non-ASCII stdout and stderr with UTF-8 console code pages");
+                if (shell != "cmd")
+                {
+                    result = await Run(Entry(call + " | ForEach-Object { $_ }", shell));
+                    Assert(result.ExitCode == 0 && result.Output.Contains("Ping wird ausgeführt für google.com: äöü ÄÖÜ ß"), shell + " decodes piped native Unicode output");
+                }
+
+                result = await Run(Entry("ping.exe -n 1 127.0.0.1", shell));
+                Assert(result.ExitCode == 0 && !result.Output.Contains('\uFFFD') && !result.Output.Contains('?'), shell + " captures real ping output without replacement characters");
+            }
+
             foreach (var shell in new[] { "pwsh", "powershell", "cmd" })
             {
                 foreach (var mode in new[] { "cooperate", "ignore", "child" })
