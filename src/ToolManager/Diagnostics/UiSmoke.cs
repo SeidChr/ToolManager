@@ -262,6 +262,8 @@ internal static class UiSmoke
 
                 checks.Add("PASS Console output and input use fixed black templates without hover/focus triggers.");
                 await CheckStartKeepsDispatcherAvailableAsync(folder);
+                await CheckRestartOutputAsync();
+                checks.Add("PASS Output appends restarted runs to one feed and sends input to the current live run.");
                 await CheckCronOutputAsync();
                 checks.Add("PASS Cron output shows retained occurrences in order and updates when a new occurrence writes output.");
                 await StatusUiTests.RunAsync();
@@ -306,10 +308,10 @@ internal static class UiSmoke
             editedTool.Name = "Renamed report exporter";
             editedTool.Behavior = "Cron";
             OutputWindow.ShowForTool(manager, editedTool);
-            var runPicker = ((System.Windows.Controls.DockPanel)first.Content).Children.OfType<System.Windows.Controls.ComboBox>().Single();
+            var inputRow = ((System.Windows.Controls.DockPanel)first.Content).Children.OfType<System.Windows.Controls.DockPanel>().Single();
             if (Application.Current.Windows.OfType<OutputWindow>().Single() != first ||
                 !first.Title.StartsWith(editedTool.Name, StringComparison.Ordinal) ||
-                runPicker.Visibility != Visibility.Collapsed)
+                inputRow.Visibility != Visibility.Collapsed)
             {
                 throw new Exception("An edited tool must reuse its Output window with the updated title and behavior.");
             }
@@ -354,6 +356,58 @@ internal static class UiSmoke
         if (main.IsVisible || IsWindowVisible(handle))
         {
             throw new Exception("Second tray toggle must hide the same window.");
+        }
+    }
+
+    private static async Task CheckRestartOutputAsync()
+    {
+        var config = new Configuration { StopTimeoutSeconds = 1 };
+        config.Shells.ForEach(shell => shell.LoadProfile = false);
+        var manager = new RunManager(config);
+        var tool = new ToolEntry { ShellId = "powershell", Interactive = true, Command = "Write-Output 'first run marker'" };
+        await manager.StartAsync(tool);
+        var window = new OutputWindow(manager, tool);
+        window.Show();
+        try
+        {
+            var root = (System.Windows.Controls.DockPanel)window.Content;
+            var output = root.Children.OfType<System.Windows.Controls.TextBox>().Single();
+            await WaitForOutputAsync(output, "first run marker");
+            await manager.StopAllAsync();
+            tool.Command = "Write-Output 'second run marker'";
+            await manager.StartAsync(tool);
+            await WaitForOutputAsync(output, "second run marker");
+            OutputWindow.ShowForTool(manager, tool);
+            var send = Descendants(root).OfType<System.Windows.Controls.Button>().Single(button => button.Content as string == "Send");
+            if (Application.Current.Windows.OfType<OutputWindow>().Single() != window || !send.IsEnabled ||
+                Descendants(root).OfType<System.Windows.Controls.ComboBox>().Any())
+            {
+                throw new Exception("Restarting must reuse one feed without a run selector and enable input for the new run.");
+            }
+
+            var input = Descendants(root).OfType<System.Windows.Controls.TextBox>().Single(box => box != output);
+            input.Text = "Write-Output ('live' + ' input marker')";
+            send.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            await WaitForOutputAsync(output, "live input marker");
+            var firstIndex = output.Text.IndexOf("first run marker", StringComparison.Ordinal);
+            var secondIndex = output.Text.IndexOf("second run marker", StringComparison.Ordinal);
+            if (firstIndex < 0 || secondIndex <= firstIndex)
+            {
+                throw new Exception("Restarted output must append after the previous run in the same feed.");
+            }
+
+            await manager.StopAllAsync();
+            await Task.Delay(300);
+            if (send.IsEnabled || !output.Text.Contains("first run marker", StringComparison.Ordinal) ||
+                !output.Text.Contains("second run marker", StringComparison.Ordinal))
+            {
+                throw new Exception("Stopping must disable input and retain both runs in the feed.");
+            }
+        }
+        finally
+        {
+            await manager.StopAllAsync();
+            window.Close();
         }
     }
 
@@ -404,7 +458,7 @@ internal static class UiSmoke
         {
             if (elapsed.Elapsed > TimeSpan.FromSeconds(5))
             {
-                throw new TimeoutException("Cron output did not refresh for " + expected);
+                throw new TimeoutException("Output did not refresh for " + expected);
             }
 
             await Task.Delay(25);

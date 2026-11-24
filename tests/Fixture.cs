@@ -15,11 +15,27 @@ internal static class Fixture
     [DllImport("kernel32")]
     private static extern nint GetConsoleWindow();
 
+    [DllImport("kernel32")]
+    private static extern uint GetConsoleCP();
+
+    [DllImport("kernel32")]
+    private static extern uint GetConsoleOutputCP();
+
     [DllImport("user32")]
     private static extern bool IsWindowVisible(nint window);
 
     private static int Main(string[] args)
     {
+        if (args[0] == "encoding")
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            var encoding = System.Text.Encoding.GetEncoding((int)GetConsoleOutputCP());
+            var bytes = encoding.GetBytes("Ping wird ausgeführt für google.com: äöü ÄÖÜ ß\r\n");
+            Console.OpenStandardOutput().Write(bytes);
+            Console.OpenStandardError().Write(bytes);
+            return GetConsoleCP() == 65001 && GetConsoleOutputCP() == 65001 ? 0 : 1;
+        }
+
         string mode = args[0], marker = args[1];
         handler = signal =>
         {

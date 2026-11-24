@@ -46,7 +46,7 @@ Use **Custom** mode for things like a Windows service or a background helper tha
 
 ## Keep a shell open for follow-up commands
 
-Turn on **Keep shell open after the start command** for a Managed tool. Open **Output**, select the active run and send another command or answer a text prompt. Each line goes to the same session, so you can reuse variables you set earlier.
+Turn on **Keep shell open after the start command** for a Managed tool. Open **Output** and send another command or answer a text prompt in the current live run. Each line goes to the same session, so you can reuse variables you set earlier.
 
 ![Keep a shell open for follow-up commands](docs/readme/interactive-shell.png)
 

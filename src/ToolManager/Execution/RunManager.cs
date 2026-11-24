@@ -186,7 +186,7 @@ public sealed class RunManager
         var path = Path.Combine(directory, profile.Kind == "CMD" ? "command.cmd" : "command.ps1");
 
         // BOM preserves non-ASCII scripts in Windows PowerShell 5.1.
-        script = profile.Kind == "CMD" ? "@chcp 65001 >nul\r\n" + script : "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\nif (Get-Variable PSStyle -ErrorAction Ignore) { $PSStyle.OutputRendering = 'PlainText' }\n" + script;
+        script = profile.Kind == "CMD" ? "@chcp 65001 >nul\r\n" + script : "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)\n[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n$OutputEncoding = [Console]::OutputEncoding\nif (Get-Variable PSStyle -ErrorAction Ignore) { $PSStyle.OutputRendering = 'PlainText' }\n" + script;
         File.WriteAllText(path, script, profile.Kind == "CMD" ? new UTF8Encoding(false) : new UTF8Encoding(true));
         var command = profile.Kind == "CMD"
             ? $"\"{shell}\" /d /s {(interactive ? "/k" : "/c")} \"\"{path}\"\""
